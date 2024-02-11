@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+        <title>Pricing Table</title>
+        <style>
+        /* Add your CSS styles here */
+        .pricing-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        .pricing-table th, .pricing-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .pricing-table th {
+            background-color: #f2f2f2;
+        }
+        
+        .pricing-row{
+            width:250px;
+            float:right;
+            border:1px oslid #999;
+            background-color:white;
+            margin:10px;
+            list-style-type: none;
+        }
+        .pricing-row .title{
+            height: 40px;
+            line-height: 40px;
+            font-size: 30px;
+            background-color: #f1680a;
+            color: white;
+        }
+        .pricing-row .pricing-cell{
+            width:100%;
+           height:30px;
+           line-height: 30px;
+           
+        }
+        
+        .pricing-cell{
+            width:100%;
+            text-align:center;
+            border:1px solid #999;
+            background-color:white;
+            color:#999;
+        }
+    </style>
+    </head>
+    <body>
+
+        <div id="pricing-data">
+            <!-- Pricing data will be dynamically populated here -->
+        </div>
+
+        <script>
+           
+        $(document).ready(function() {
+
+            jQuery.get("https://easy-wordpress.org/code/subscription/plans.php", function (data) {
+                // Parse the JSON response
+                if (typeof data === 'object') {
+                    // Assuming data is already a JavaScript object
+                    var jsonData = data;
+                } else {
+                    // Parse the JSON response
+                    var jsonData = JSON.parse(data);
+                }
+                //var jsonData = JSON.parse(data);
+                 populatePricingTable(jsonData);
+                // Display the JSON data on the page
+                // var jsonDataString = JSON.stringify(jsonData, null, 2); // Pretty-print JSON
+                // $("#json-data").html("<pre>" + jsonDataString + "</pre>");
+            })
+            .fail(function () {
+                alert("Failed to fetch JSON data.");
+            });
+
+            
+
+        
+            // Function to populate the pricing table
+        function populatePricingTable(data) {
+            var tableBody = $("#pricing-data");
+            tableBody.empty();
+
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var propertiesHtml = "";
+
+                // for (var j = 0; j < row.properties.length; j++) {
+                //     var property = row.properties[j];
+                //     propertiesHtml += '<li>' + property.property_name_other_lang + ': ' + property.Amount + ' ' + property.Units + '</li>';
+                // }
+                for (var j = 0; j < row.properties.length; j++) {
+                    var property = row.properties[j];
+                    propertiesHtml += '<li class="pricing-cell"><span>' + property.Units + '</span>&nbsp;<label></label></li>';
+                }
+                tableBody.append(
+                    '<ul class="pricing-row">' +
+                        '<li class="pricing-cell title">' + row.plan_name_other_lang + '</li>' +
+                        propertiesHtml + // Append properties HTML here
+
+                        '<li class="pricing-cell"><div class="btn btn-success"><span>' + row.price_month  + '</span>&nbsp;<label>ש"ח</label>&nbsp;<label>לחודש במנוי שנתי</label></div></li>'+
+                        '<li class="pricing-cell"><span>' + row.price_year  + '</span>&nbsp;<label>ש"ח</label>&nbsp;<label>לחודש במנוי שנתי</label></li>' +
+                    '</ul>'
+                );
+            }
+        }
+       
+    });
+  
+    </script>
+    </body>
+</html>
