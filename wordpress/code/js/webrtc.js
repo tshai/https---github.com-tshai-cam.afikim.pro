@@ -12,10 +12,10 @@ const socket = new WebSocket('wss://cam.afikim.pro:8080');
 socket.addEventListener('open', function(event) {
     // Send identification message
     const params = new URLSearchParams(window.location.search);
-    const user_id = params.get('user_id'); // This gets '1' from your example URL
-    const room_id = params.get('room_id');
+    const user_guid = params.get('user_guid'); // This gets '1' from your example URL
+    const room_guid = params.get('room_guid');
     const user_type = params.get('user_type');
-    socket.send(JSON.stringify({ type: 'identify', user_id: user_id ,room_id:room_id,user_type:user_type}));
+    socket.send(JSON.stringify({ type: 'identify', user_guid: user_guid ,room_guid:room_guid,user_type:user_type}));
 });
 
 // Handle WebSocket messages
@@ -27,10 +27,10 @@ socket.addEventListener('message', async function (event) {
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         const params = new URLSearchParams(window.location.search);
-        const user_id = params.get('user_id'); // This gets '1' from your example URL
-        const room_id = params.get('room_id');
+        const user_guid = params.get('user_guid'); // This gets '1' from your example URL
+        const room_guid = params.get('room_guid');
         const user_type = params.get('user_type');
-        socket.send(JSON.stringify({type: 'answer', user_id: user_id ,room_id:room_id,user_type:user_type,data: answer}));
+        socket.send(JSON.stringify({type: 'answer', user_guid: user_guid ,room_guid:room_guid,user_type:user_type,data: answer}));
         //socket.send(JSON.stringify({type: 'answer', answer: answer}));
     } else if (data.type === 'answer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.data));
@@ -55,10 +55,10 @@ async function createPeerConnection() {
     peerConnection.onicecandidate = function(event) {
         if (event.candidate) {
             const params = new URLSearchParams(window.location.search);
-            const user_id = params.get('user_id'); // This gets '1' from your example URL
-            const room_id = params.get('room_id');
+            const user_guid = params.get('user_guid'); // This gets '1' from your example URL
+            const room_guid = params.get('room_guid');
             const user_type = params.get('user_type');
-            socket.send(JSON.stringify({type: 'candidate', user_id: user_id ,room_id:room_id,user_type:user_type,data: event.candidate}));
+            socket.send(JSON.stringify({type: 'candidate', user_guid: user_guid ,room_guid:room_guid,user_type:user_type,data: event.candidate}));
             //socket.send(JSON.stringify({type: 'candidate', candidate: event.candidate}));
         }
     };
@@ -92,19 +92,19 @@ async function startCall() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
-    // Extract user_id from the URL
+    // Extract user_guid from the URL
     const params = new URLSearchParams(window.location.search);
-    const user_id = params.get('user_id'); // This gets '1' from your example URL
-    const room_id = params.get('room_id');
+    const user_guid = params.get('user_guid'); // This gets '1' from your example URL
+    const room_guid = params.get('room_guid');
     const user_type = params.get('user_type');
-    socket.send(JSON.stringify({type: 'offer', user_id: user_id ,room_id:room_id,user_type:user_type,data: offer}));
+    socket.send(JSON.stringify({type: 'offer', user_guid: user_guid ,room_guid:room_guid,user_type:user_type,data: offer}));
 
-    // // Include user_id in the WebSocket message
+    // // Include user_guid in the WebSocket message
     // socket.send(JSON.stringify({
     //     type: 'offer',
     //     offer: offer,
-    //     from: user_id
-    //      // Include the extracted user_id
+    //     from: user_guid
+    //      // Include the extracted user_guid
     // }));
 
 }

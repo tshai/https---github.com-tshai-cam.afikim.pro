@@ -41,7 +41,7 @@ if ($q_type == "send_message") {
                     $user = R::getRow("SELECT * FROM wp_users WHERE ID = :value", [':value' => $userMeta["user_id"]]);
                     if ($user["is_model"]) {
                         $canContinue = false;
-                        $whatsappRes = $whatsapp->sendMessage($senderPhone, "Cannot send messages here");
+                        $whatsappRes = $whatsapp->sendMessage($senderPhone, "System message: Cannot send messages here");
                     }
                 }
                 if ($canContinue) {

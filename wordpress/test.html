@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Cropping</title>
+<style>
+    #outputCanvas {
+        border: 1px solid black;
+    }
+</style>
+</head>
+<body>
+    <input type="file" id="imageInput" accept="image/*">
+    <br>
+    <canvas id="outputCanvas"></canvas>
+
+    <script>
+        document.getElementById('imageInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(readerEvent) {
+                const image = new Image();
+                image.onload = function() {
+                    const canvas = document.getElementById('outputCanvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // Set canvas dimensions to match cropped area
+                    canvas.width = 200; // Set your desired width here
+                    canvas.height = 200; // Set your desired height here
+
+                    // Crop image and draw on canvas
+                    const sourceX = 0; // Start cropping from left edge
+                    const sourceY = 0; // Start cropping from top edge
+                    const sourceWidth = 200; // Width of cropped area
+                    const sourceHeight = 200; // Height of cropped area
+                    const destX = 0; // Draw cropped image at x = 0
+                    const destY = 0; // Draw cropped image at y = 0
+                    const destWidth = 200; // Width of drawn image
+                    const destHeight = 200; // Height of drawn image
+                    ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, destX, destY, destWidth, destHeight);
+                };
+                image.src = readerEvent.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>

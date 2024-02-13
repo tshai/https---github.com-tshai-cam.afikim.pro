@@ -12,3 +12,7 @@ require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/MeshulamPaymentProcessor
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/tools.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/curlSend.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/chatTimeUse.php');
+require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/credit_card_payment.php');
+require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/CreditCard.php');
+require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/PaymentData.php');
+require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/CryptoHelper.php');

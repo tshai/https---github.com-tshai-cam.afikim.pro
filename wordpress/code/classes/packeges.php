@@ -1,7 +1,11 @@
 <?php
-require($_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php');
+if (!defined('PROJECT_ROOT')) {
+    define('PROJECT_ROOT', $_SERVER['DOCUMENT_ROOT']);
+}
+
+require_once(PROJECT_ROOT . '/vendor/autoload.php');
 // First, include the WordPress load script to access WordPress functions
-require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-load.php');
+require_once(PROJECT_ROOT . '/wp-load.php');
 
 use Ramsey\Uuid\Uuid;
 
