@@ -50,7 +50,15 @@ class websocketHelpers {
         $roomData->room_guid=$room_guid;
         $roomData->user_guid=$user_guid;
         $instance = self::getInstance();
-    
+        $sql2 = "SELECT session_status  FROM chat_time_use WHERE room_guid = ?";
+        $stmt2 = $instance->pdo->prepare($sql2);
+        $stmt2->execute([$room_guid]);
+        $sessionStatus = $stmt2->fetchColumn();
+
+
+        if($sessionStatus == 1){
+            return null;
+        };
         // Check if the user is a model
         $sql1 = "SELECT is_model, ID FROM wp_users WHERE user_guid = ?";
         $stmt1 = $instance->pdo->prepare($sql1);
@@ -69,7 +77,7 @@ class websocketHelpers {
         }
     }
 
-    public static function userEnterChat($roomData) {
+    public static function userEnterChat(roomData $roomData) {
         echo "userEnterChat\n";
         try {
             $instance = self::getInstance();
@@ -96,17 +104,17 @@ class websocketHelpers {
             return "Database error";
         }
     }
-    public static function closeChat($roomData) {
+    public static function closeChat($room_guid,$user_id) {
         echo "closeChat\n"; // Updated for clarity
         try {
             $instance = self::getInstance();
                     $sql3 = "UPDATE chat_time_use SET dateout = NOW(), session_status = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_id = :user_id";
                     $stmt3 = $instance->pdo->prepare($sql3);
-                    $stmt3->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
-                    $stmt3->bindParam(':user_id', $roomData->user_id, PDO::PARAM_INT);
+                    $stmt3->bindParam(':room_guid', $room_guid, PDO::PARAM_STR);
+                    $stmt3->bindParam(':user_id', $user_id, PDO::PARAM_INT);
                     $stmt3->execute();
         
-                    echo "Chat closed for user: " . $roomData->user_id . " in room: " . $roomData->room_guid . "\n";
+                    echo "Chat closed for user: " . $user_id . " in room: " . $room_guid . "\n";
                 return "ok";
         } catch (PDOException $e) {
             echo "Database error: " . $e->getMessage();

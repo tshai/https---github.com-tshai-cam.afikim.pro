@@ -45,6 +45,7 @@ class WebSocketServer implements MessageComponentInterface {
         $connectionData->room_guid = null; // Default value or null
         $connectionData->user_type = null; // Default value or null
         $connectionData->is_model = null; // Default value or null
+        $connectionData->last_date = null; // Default value or null
         $this->clients->attach($conn, $connectionData);
         echo "New connection! ({$conn->resourceId})\n";
     }
@@ -53,9 +54,17 @@ class WebSocketServer implements MessageComponentInterface {
         $websocketHelpers = websocketHelpers::getInstance();
         // Retrieve the sender's roomData
         $senderData = $this->clients->offsetGet($from);
+        $room_data=new roomData();
         if($senderData->user_id === null){
             $room_data=$websocketHelpers->build_user_object($data['user_guid'],$data['room_guid']);
             if($room_data==null){
+                foreach ($this->clients as $client) {
+                    // Retrieve stored roomData for this client
+                    $clientData = $this->clients->offsetGet($client);
+                    if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id == $senderData->user_id) {
+                        $client->send("{session_finished}");
+                    }
+                }
                echo "room_data==null\n";
                die();
             }
@@ -66,33 +75,50 @@ class WebSocketServer implements MessageComponentInterface {
                 $senderData->room_guid=$room_data->room_guid;
                 $senderData->user_type=$room_data->user_type;
                 $senderData->is_model=$room_data->is_model;
+                $senderData->last_date=date('Y-m-d H:i:s');
             }
         }
-        $websocketHelpers->userEnterChat($senderData->room_guid,$room_data->user_id);
-     
-        
-        // if ($userId === null || $roomId === null || $userType === null) {
-        //     // Log missing data or handle the error as appropriate
-        //     $this->writeToLog("Missing data from message: " . $msg);
-        //     echo "Missing data from message: " . $msg."\n";
-        //     return; // Exit the function if the essential data is not present
-        // }
-        // Update the sender's roomData based on the received message
-        // $senderData->user_id = $data['user_id'];
-        // $senderData->user_guid = $data['user_guid'];
-        // $senderData->room_id = $data['room_id'];
-        // $senderData->user_type = $data['user_type'];
-        
-        // Log the identification/update event
-        $this->writeToLog("User {$senderData->user_id} identified in room {$senderData->room_id} with type {$senderData->user_type}");
-        echo "User {$senderData->user_id} identified in room {$senderData->room_id} with type {$senderData->user_type}\n";
+        // Ensure $senderData->last_date is a DateTime object. If it's a string, convert it.
+        if (is_string($senderData->last_date)) {
+            $senderData->last_date = new DateTime($senderData->last_date);
+        }
+
+        // Create a DateTime object for the current time
+        $now = new DateTime();
+
+        // Calculate the difference
+        $interval = $now->diff($senderData->last_date);
+
+        // Calculate total seconds (note: this does not account for leap seconds)
+        $seconds = ($interval->days * 24 * 60 * 60) + // Days to seconds
+                ($interval->h * 60 * 60) +         // Hours to seconds
+                ($interval->i * 60) +              // Minutes to seconds
+                $interval->s;                      // Seconds
+
+        if ($seconds > 10) {
+            echo "last_date == $seconds\n";
+            $this->clients->detach($from);
+            // You might want to inform the user before closing the connection
+            $from->send("Your session has expired due to inactivity.");
+            // Close the connection
+            $from->close();
+            die();
+        }
+
+        // Update $senderData->last_date to the current time
+        $senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+        // Or if you need to store as a string: $senderData->last_date = $now->format('Y-m-d H:i:s');
+        // Output: Difference in seconds: 90
+        $websocketHelpers->userEnterChat($room_data);
+        $this->writeToLog("User {$senderData->user_id} identified in room {$senderData->room_guid} with type {$senderData->user_type}");
+        echo "User {$senderData->user_id} identified in room {$senderData->room_guid} with type {$senderData->user_type}\n";
         // Broadcast the message to other clients in the same room, excluding the sender
         foreach ($this->clients as $client) {
             // Retrieve stored roomData for this client
             $clientData = $this->clients->offsetGet($client);
             
             // Check if this client is in the same room and not the sender
-            if ($clientData->room_id == $senderData->room_id && $clientData->user_id != $senderData->user_id) {
+            if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
                 $client->send($msg);
                 // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
                 // break; // Remove or comment out if broadcasting to the entire room
@@ -104,12 +130,12 @@ class WebSocketServer implements MessageComponentInterface {
         // Assuming you've stored connection details as suggested above
         if ($this->clients->contains($conn)) {
             $clientData = $this->clients->offsetGet($conn);
-            $room_id = $clientData->room_id; // Access the stored room_id
-            $user_id = $clientData->user_id; // Access the stored room_id
+            $room_guid = $clientData->room_guid; // Access the stored room_guid
+            $user_id = $clientData->user_id; // Access the stored room_guid
             $websocketHelpers = websocketHelpers::getInstance();
-            $websocketHelpers->closeChat($user_id,$room_id);
-            // Now you can use $room_id for logging or cleanup purposes
-            echo "Connection {$conn->resourceId} with room ID $room_id has disconnected user_id $user_id\n";
+            $websocketHelpers->closeChat($room_guid,$user_id);
+            // Now you can use $room_guid for logging or cleanup purposes
+            echo "Connection {$conn->resourceId} with room ID $room_guid has disconnected user_id $user_id\n";
         }
     
         // Don't forget to detach the client from storage

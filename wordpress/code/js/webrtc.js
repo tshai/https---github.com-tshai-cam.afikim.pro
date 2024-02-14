@@ -9,6 +9,13 @@ const config = {
 
 // Initialize WebSocket connection
 const socket = new WebSocket('wss://cam.afikim.pro:8080');
+
+// socket.onerror = function(event) {
+//     console.error('WebSocket error observed:', event);
+//     alert('קיימת תקלה בחיבור לשרת הוידאו, אנא התחל צ\'ט חדש');
+// };
+
+
 socket.addEventListener('open', function(event) {
     // Send identification message
     const params = new URLSearchParams(window.location.search);
