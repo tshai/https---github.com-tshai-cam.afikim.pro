@@ -80,6 +80,16 @@ class WebSocketServer implements MessageComponentInterface {
                 $senderData->last_date=date('Y-m-d H:i:s');
             }
         }
+        else
+        {
+            $room_data->user_id=$senderData->user_id;
+            $room_data->user_guid=$senderData->user_guid;
+            $room_data->room_guid=$senderData->room_guid;
+            $room_data->user_type=$senderData->user_type;
+            $room_data->is_model=$senderData->is_model;
+            //$room_data->last_date=$senderData->last_date;
+        }
+        echo "room_data->user_id==".$room_data->user_id."\n";
         // if (is_string($senderData->last_date)) {
         //     $senderData->last_date = new DateTime($senderData->last_date);
         // }
@@ -103,11 +113,11 @@ class WebSocketServer implements MessageComponentInterface {
         //     die();
         // }
         
-        // if($data['type']=="update"){
-        //          //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
-        //         $websocketHelpers->update_chat_time_use($room_data);
-        //         return;
-        // };
+        if($data['type']=="update"){
+                 //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+                $websocketHelpers->update_chat_time_use($room_data);
+                return;
+        };
         // Update $senderData->last_date to the current time
 
         // Or if you need to store as a string: $senderData->last_date = $now->format('Y-m-d H:i:s');
