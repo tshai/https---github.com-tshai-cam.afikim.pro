@@ -89,6 +89,33 @@ class WebSocketServer implements MessageComponentInterface {
             $room_data->is_model=$senderData->is_model;
             //$room_data->last_date=$senderData->last_date;
         }
+
+
+        $count_how_many_same_user_in_room=0;
+        foreach ($this->clients as $client) {
+            
+            // Retrieve stored data for this client
+            $clientData = $this->clients->offsetGet($client);
+            echo "clientData ".$clientData->room_guid."\n";
+            echo "room_data ".$room_data->room_guid."\n";
+            if ($clientData->room_guid == $room_data->room_guid && $clientData->user_guid == $room_data->user_guid) {
+                // Assuming you're checking for both user_guid and room_guid similarity
+                $count_how_many_same_user_in_room++;
+               
+            }
+        }
+        if($count_how_many_same_user_in_room>1){
+            echo "count_how_many_same_user_in_room==" . $count_how_many_same_user_in_room . "\n";
+            // Send a message to the client indicating more than one user is in the same room
+            $client->send(json_encode(['message' => 'moreThanOneUser']));
+            // Assuming you have an instance of your websocketHelpers class accessible as $websocketHelpers
+            // and a method closeChat that takes room_guid and user_id as parameters
+            $websocketHelpers->closeChat($room_data->room_guid, $room_data->user_id);
+            return;
+            // $websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
+            // return;
+        }
+
         echo "room_data->user_id==".$room_data->user_id."\n";
         // if (is_string($senderData->last_date)) {
         //     $senderData->last_date = new DateTime($senderData->last_date);
