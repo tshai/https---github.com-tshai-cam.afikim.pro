@@ -7,6 +7,7 @@ class whatsapp
 {
     private string $access_token = "65c23c9932502";
     private string $instance_id;
+
     public function __construct($param1 = null)
     {
         // Constructor logic
@@ -15,7 +16,7 @@ class whatsapp
         }
     }
 
-    public static function insertMessageToWhatsApp($messageText, $messageType, $userNum, $girlNum): void
+    public static function insertMessageToWhatsApp($messageText, $messageType, $userNum, $girlNum, $girl_send, $file_name = null): void
     {
 
         $dbInstance = db::getInstance();
@@ -25,26 +26,37 @@ class whatsapp
         if ($mysqli->connect_error) {
             die("Connection failed: " . $mysqli->connect_error);
         }
+        $date = date('Y-m-d H:i:s');
+        $girl_read = $girl_send != true;
+        $substringMessage = (strlen($messageText) > 100 ? substr($messageText, 0, 100) : $messageText);
+        $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE girl_num=? and user_num=? LIMIT 1";
+        $chats = R::getAll($chatsSql, [$girlNum, $userNum]);
+        $wp_whatsapp_chats_id = 0;
+        if ($chats) {
+            $wp_whatsapp_chats_id = $chats[0]["ID"];
+            $updateSql = "UPDATE wp_whatsapp_chats SET last_time_update=?, newest_message_cut=?, girl_read=? WHERE girl_num=? AND user_num=?";
+            $updateParams = [$date, $substringMessage, $girl_read, $girlNum, $userNum];
+            R::exec($updateSql, $updateParams);
+        } else {
+            $room_id = uniqid();
+            $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,girl_read) VALUES (?, ?, ?, ?,?,?,?)";
+            $stmtChatsInsert = $mysqli->prepare($sqlChatsInsert);
+            // Bind parameters
+            $stmtChatsInsert->bind_param("iissss", $girlNum, $userNum, $date, $room_id, $date, $substringMessage, $girl_read);
+            if (!$stmtChatsInsert->execute()) {
+                errors::addError("Error: " . $stmtChatsInsert->error, "classes/whatsapp.php line 43");
+            }
+            $stmtChatsInsert->close();
+            $wp_whatsapp_chats_id = $mysqli->insert_id;
+        }
 
-        // Create a prepared statement
-        $sql = "INSERT INTO wp_whatsapp_messages (date_in, message, message_type, user_num, model_num, room_id, tmp_access_guid) VALUES (?, ?, ?, ?, ?, ?, ?)";
-
-        // Generate unique values for room_id and tmp_access_guid using UUID
-        $room_id = uniqid();
-        $tmp_access_guid = uniqid();
-
-        // Create a prepared statement
+        $sql = "INSERT INTO wp_whatsapp_messages (date_in, message, message_type, girl_send,wp_whatsapp_chats_id,file_name) VALUES (?, ?, ?, ?, ?,?)";
         $stmt = $mysqli->prepare($sql);
-        $date =  date('Y-m-d H:i:s');
-        // Bind parameters
-        $stmt->bind_param("sssssss", $date, $messageText, $messageType, $userNum, $girlNum, $room_id, $tmp_access_guid);
-
-        // Execute the statement
+        $date = date('Y-m-d H:i:s');
+        $stmt->bind_param("sssiis", $date, $messageText, $messageType, $girl_send, $wp_whatsapp_chats_id, $file_name);
         if (!$stmt->execute()) {
             errors::addError("Error: " . $stmt->error, "classes/whatsapp.php line 45");
         }
-
-        // Close the statement and connection
         $stmt->close();
         $mysqli->close();
     }
@@ -70,7 +82,7 @@ class whatsapp
             }
 
 
-            $date =  date('Y-m-d H:i:s');
+            $date = date('Y-m-d H:i:s');
             // Bind parameters
             $stmt->bind_param("ssi", $date, $messageText, $userNum);
             // Execute the statement
@@ -137,12 +149,12 @@ class whatsapp
         try {
             $phoneWithoutPlus = str_replace('+', '', $phoneNumber);
             $jsonUrl = "https://social.hilix.org/api/send?" . http_build_query([
-                'access_token' =>  $this->access_token,
-                'instance_id' => $this->instance_id,
-                'number' => $phoneWithoutPlus,
-                'type' => 'text',
-                'message' => $message
-            ]);
+                    'access_token' => $this->access_token,
+                    'instance_id' => $this->instance_id,
+                    'number' => $phoneWithoutPlus,
+                    'type' => 'text',
+                    'message' => $message
+                ]);
             $res = whatsapp::webRequestPost($jsonUrl);
             errors::addError("Error: " . $res, "classes/whatsapp.php line 148");
             $resJson = json_decode($res);
@@ -162,14 +174,14 @@ class whatsapp
         try {
             $phoneWithoutPlus = str_replace('+', '', $phoneNumber);
             $jsonUrl = "https://social.hilix.org/api/send?" . http_build_query([
-                'access_token' => $this->access_token,
-                'instance_id' => $this->instance_id,
-                'media_url' => $fileUrl,
-                'message' => $message,
-                'type' => 'media',
-                'number' => $phoneWithoutPlus,
-                'filename' => $fileName
-            ]);
+                    'access_token' => $this->access_token,
+                    'instance_id' => $this->instance_id,
+                    'media_url' => $fileUrl,
+                    'message' => $message,
+                    'type' => 'media',
+                    'number' => $phoneWithoutPlus,
+                    'filename' => $fileName
+                ]);
             $res = whatsapp::webRequestPost($jsonUrl);
             $resJson = json_decode($res);
             if (isset($resJson->status) && strtolower($resJson->status) == "success") {
@@ -187,7 +199,7 @@ class whatsapp
     {
         try {
             $jsonContent = file_get_contents($jsonUrl);
-            return   $jsonContent;
+            return $jsonContent;
         } catch (Exception $ex) {
             // Handle the exception as needed
             errors::addError("Error: " . $ex->getMessage(), "classes/whatsapp.php line 195");
@@ -195,10 +207,10 @@ class whatsapp
         }
     }
 
-    public  static function extraxtMessageFromJson($jsonObject)
+    public static function extraxtMessageFromJson($jsonObject)
     {
         $messageText = $jsonObject->data->data->messages[0]->message->conversation;
-        if ($messageText=="") {
+        if ($messageText == "") {
             $messageText = htmlspecialchars($jsonObject->data->data->messages[0]->message->extendedTextMessage->text);
         }
 

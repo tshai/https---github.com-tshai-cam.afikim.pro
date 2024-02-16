@@ -55,6 +55,17 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
+// function update_time_use() {
+//     const params = new URLSearchParams(window.location.search);
+//     const user_guid = params.get('user_guid'); // This gets '1' from your example URL
+//     const room_guid = params.get('room_guid');
+//     const user_type = params.get('user_type');
+//     socket.send(JSON.stringify({type: 'update', user_guid: user_guid ,room_guid:room_guid,user_type:user_type,data: "update"}));
+//     console.log('Function called by worker at', new Date());
+// }
+
+// setInterval(update_time_use, 3000); // Call doSomething every 3 seconds
+
 async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(config);
 

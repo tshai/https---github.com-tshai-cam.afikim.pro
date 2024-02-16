@@ -76,7 +76,24 @@ class websocketHelpers {
             return null;
         }
     }
-
+    public static function update_chat_time_use(roomData $roomData) {
+        echo "update\n";
+        try {
+            $instance = self::getInstance();
+                // Update 'datein' and 'user_enter_chat' if conditions are met
+                $sql2 = "UPDATE chat_time_use SET dateout = NOW() WHERE room_guid = :room_guid AND session_status = 0";
+                $stmt2 = $instance->pdo->prepare($sql2);
+                $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
+                $stmt2->execute();
+                echo "User entered chat: " . $roomData->user_id . " " . $roomData->room_guid . "\n";
+    
+            return "ok";
+        } catch (PDOException $e) {
+            // Handle database error
+            error_log("Database error: " . $e->getMessage());
+            return "Database error";
+        }
+    }
     public static function userEnterChat(roomData $roomData) {
         echo "userEnterChat\n";
         try {

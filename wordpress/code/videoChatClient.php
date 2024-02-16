@@ -19,7 +19,7 @@ echo "<br>".$other_user_url;
     <h2>WebRTC Video Chat Sample</h2>
     <video id="localVideo" autoplay muted></video>
     <video id="remoteVideo" autoplay></video>
-    <script src="js/webrtc.js?v=1.11"></script>
+    <script src="js/webrtc.js?v=1.13"></script>
     <button id="startCall">Start Call</button>
 </body>
 </html>

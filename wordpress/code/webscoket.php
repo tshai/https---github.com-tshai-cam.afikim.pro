@@ -18,6 +18,7 @@ class roomData{
     public $user_type;
     public $user_guid;
     public $is_model;
+    public $action;
 
 }
 
@@ -51,6 +52,7 @@ class WebSocketServer implements MessageComponentInterface {
     }
     public function onMessage(ConnectionInterface $from, $msg) {
         $data = json_decode($msg, true);
+        
         $websocketHelpers = websocketHelpers::getInstance();
         // Retrieve the sender's roomData
         $senderData = $this->clients->offsetGet($from);
@@ -78,35 +80,36 @@ class WebSocketServer implements MessageComponentInterface {
                 $senderData->last_date=date('Y-m-d H:i:s');
             }
         }
-        // Ensure $senderData->last_date is a DateTime object. If it's a string, convert it.
-        if (is_string($senderData->last_date)) {
-            $senderData->last_date = new DateTime($senderData->last_date);
-        }
+        // if (is_string($senderData->last_date)) {
+        //     $senderData->last_date = new DateTime($senderData->last_date);
+        // }
+        // // Create a DateTime object for the current time
+        // $now = new DateTime();
+        // // Calculate the difference
+        // $interval = $now->diff($senderData->last_date);
+        // // Calculate total seconds (note: this does not account for leap seconds)
+        // $seconds = ($interval->days * 24 * 60 * 60) + // Days to seconds
+        //         ($interval->h * 60 * 60) +         // Hours to seconds
+        //         ($interval->i * 60) +              // Minutes to seconds
+        //         $interval->s;                      // Seconds
 
-        // Create a DateTime object for the current time
-        $now = new DateTime();
-
-        // Calculate the difference
-        $interval = $now->diff($senderData->last_date);
-
-        // Calculate total seconds (note: this does not account for leap seconds)
-        $seconds = ($interval->days * 24 * 60 * 60) + // Days to seconds
-                ($interval->h * 60 * 60) +         // Hours to seconds
-                ($interval->i * 60) +              // Minutes to seconds
-                $interval->s;                      // Seconds
-
-        if ($seconds > 10) {
-            echo "last_date == $seconds\n";
-            $this->clients->detach($from);
-            // You might want to inform the user before closing the connection
-            $from->send("Your session has expired due to inactivity.");
-            // Close the connection
-            $from->close();
-            die();
-        }
-
+        // if ($seconds > 10) {
+        //     echo "last_date == $seconds\n";
+        //     $this->clients->detach($from);
+        //     // You might want to inform the user before closing the connection
+        //     $from->send("Your session has expired due to inactivity.");
+        //     // Close the connection
+        //     $from->close();
+        //     die();
+        // }
+        
+        // if($data['type']=="update"){
+        //          //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+        //         $websocketHelpers->update_chat_time_use($room_data);
+        //         return;
+        // };
         // Update $senderData->last_date to the current time
-        $senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+
         // Or if you need to store as a string: $senderData->last_date = $now->format('Y-m-d H:i:s');
         // Output: Difference in seconds: 90
         $websocketHelpers->userEnterChat($room_data);
