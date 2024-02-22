@@ -73,7 +73,9 @@ class WebSocketServer implements MessageComponentInterface
         } else {
             websocketHelpers::updateRoomData($room_data, $senderData);
         }
-
+        $result = websocketHelpers::countUsersInRoom($this->clients, $senderData, $room_data);
+        $count_how_many_same_user_in_room = $result['same_user_count'];
+        $count_how_many_total_members_in_room = $result['total_member_count'];
         $count_how_many_same_user_in_room = 0;
         $count_how_many_total_members_in_room = 0;
         foreach ($this->clients as $client) {
@@ -97,7 +99,8 @@ class WebSocketServer implements MessageComponentInterface
             $client->send(json_encode(['message' => 'moreThanOneUser']));
             // Assuming you have an instance of your websocketHelpers class accessible as $websocketHelpers
             // and a method closeChat that takes room_guid and user_id as parameters
-            $websocketHelpers->closeChat($room_data->room_guid, $room_data->user_id);
+            $this->onClose($from);
+            //$websocketHelpers->closeChat($room_data->room_guid, $room_data->user_id);
             return;
             // $websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
             // return;
@@ -105,18 +108,20 @@ class WebSocketServer implements MessageComponentInterface
         echo "Count membres in room => " . $count_how_many_total_members_in_room;
         if ($count_how_many_total_members_in_room < 2) {
             if ($room_data->is_model == 0) {
-                foreach ($this->clients as $client) {
-                    // Retrieve stored roomData for this client
-                    $clientData = $this->clients->offsetGet($client);
-                    // Check if this client is in the same room and not the sender
-                    if ($clientData->room_guid == $senderData->room_guid) {
-                        $client->send("{\"error\":\"girlDiscounectInternet\"}");
-                        echo "girlDiscounectInternet 129";
-                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
-                        // break; // Remove or comment out if broadcasting to the entire room
-                    }
-                }
-                websocketHelpers::closeChat($room_data->room_guid, $room_data->user_id);
+                websocketHelpers::send_message($this->clients, $senderData, "{\"error\":\"girlDiscounectInternet\"}",2);
+                // foreach ($this->clients as $client) {
+                //     // Retrieve stored roomData for this client
+                //     $clientData = $this->clients->offsetGet($client);
+                //     // Check if this client is in the same room and not the sender
+                //     if ($clientData->room_guid == $senderData->room_guid) {
+                //         $client->send("{\"error\":\"girlDiscounectInternet\"}");
+                //         echo "girlDiscounectInternet 129";
+                //         // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                //         // break; // Remove or comment out if broadcasting to the entire room
+                //     }
+                // }
+                $this->onClose($from);
+               // websocketHelpers::closeChat($room_data->room_guid, $room_data->user_id);
             }
         }
         echo "room_data->user_id==" . $room_data->user_id . "\n";
@@ -129,34 +134,36 @@ class WebSocketServer implements MessageComponentInterface
             echo "session status => " . $sessionStatus;
             if ($sessionStatus == "1") {
                 echo "sessionSts1 called 152";
-                foreach ($this->clients as $client) {
-                    // Retrieve stored roomData for this client
-                    $clientData = $this->clients->offsetGet($client);
-                    // Check if this client is in the same room and not the sender
-                    if ($clientData->room_guid == $senderData->room_guid) {
-                        $client->send("{\"error\":\"sessionSts1\"}");
-                        echo "sessionSts1 send 158";
-                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
-                        // break; // Remove or comment out if broadcasting to the entire room
-                    }
-                }
-
-                $websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
+                websocketHelpers::send_message($this->clients, $senderData, "{\"error\":\"sessionSts1\"}",2);
+                // foreach ($this->clients as $client) {
+                //     // Retrieve stored roomData for this client
+                //     $clientData = $this->clients->offsetGet($client);
+                //     // Check if this client is in the same room and not the sender
+                //     if ($clientData->room_guid == $senderData->room_guid) {
+                //         $client->send("{\"error\":\"sessionSts1\"}");
+                //         echo "sessionSts1 send 158";
+                //         // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                //         // break; // Remove or comment out if broadcasting to the entire room
+                //     }
+                // }
+                $this->onClose($from);
+                //$websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
                 // Now you can use $room_guid for logging or cleanup purposes
                 //echo "Connection {$conn->resourceId} with room ID $room_guid has disconnected user_id $user_id\n";
             } else {
                 echo "success session sts 0 165";
                 $websocketHelpers->update_chat_time_use($room_data);
-                foreach ($this->clients as $client) {
-                    // Retrieve stored roomData for this client
-                    $clientData = $this->clients->offsetGet($client);
-                    // Check if this client is in the same room and not the sender
-                    if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
-                        $client->send("{\"success\":\"0\"}");
-                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
-                        // break; // Remove or comment out if broadcasting to the entire room
-                    }
-                }
+                websocketHelpers::send_message($this->clients, $senderData, "{\"success\":\"0\"}",0);
+                // foreach ($this->clients as $client) {
+                //     // Retrieve stored roomData for this client
+                //     $clientData = $this->clients->offsetGet($client);
+                //     // Check if this client is in the same room and not the sender
+                //     if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
+                //         $client->send("{\"success\":\"0\"}");
+                //         // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                //         // break; // Remove or comment out if broadcasting to the entire room
+                //     }
+                // }
             }
             return;
         };
@@ -168,17 +175,18 @@ class WebSocketServer implements MessageComponentInterface
         $this->writeToLog("User {$senderData->user_id} identified in room {$senderData->room_guid} with type {$senderData->user_type}");
         echo "User {$senderData->user_id} identified in room {$senderData->room_guid} with type {$senderData->user_type}\n";
         // Broadcast the message to other clients in the same room, excluding the sender
-        foreach ($this->clients as $client) {
-            // Retrieve stored roomData for this client
-            $clientData = $this->clients->offsetGet($client);
+        websocketHelpers::send_message($this->clients, $senderData, $msg,0);
+        // foreach ($this->clients as $client) {
+        //     // Retrieve stored roomData for this client
+        //     $clientData = $this->clients->offsetGet($client);
 
-            // Check if this client is in the same room and not the sender
-            if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
-                $client->send($msg);
-                // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
-                // break; // Remove or comment out if broadcasting to the entire room
-            }
-        }
+        //     // Check if this client is in the same room and not the sender
+        //     if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
+        //         $client->send($msg);
+        //         // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+        //         // break; // Remove or comment out if broadcasting to the entire room
+        //     }
+        // }
     }
 
     public function onClose(ConnectionInterface $conn)

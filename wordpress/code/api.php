@@ -139,8 +139,7 @@ if ($q_type == "start_chat") {
     $room_guid = $_POST['room_guid'];
     $other_user_guid = $_POST['other_user_guid'];
     $user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $other_user_guid]);
-    $other_user_url = "https://cam.afikim.pro/video-chat?room_guid=" . $room_guid . "&other_user_guid=" . $model_user->user_guid
-        . "&user_type=customer&user_guid=" . $other_user_guid;
+    $other_user_url = "https://cam.afikim.pro/video-chat-customer?room_guid=" . $room_guid . "&user_type=customer&user_guid=" . $other_user_guid;
     $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "phone"]);
     $whatsapp = new whatsapp($model_user->whatsapp_instance_id);
     $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $other_user_url);
@@ -162,7 +161,7 @@ if ($q_type == "start_chat") {
         $new_file_name = uniqid() . '.' . $extension;
         $target_file = $target_dir . $new_file_name;
 
-// Check if the upload folder exists, if not create it
+        // Check if the upload folder exists, if not create it
         if (!file_exists($target_dir)) {
             mkdir($target_dir, 0777, true);
         }
@@ -315,10 +314,45 @@ if ($q_type == "start_chat") {
 
     echo json_encode($images);
     die();
+} else if ($q_type == "view_model_profile") {
+    $model_guid = $_REQUEST['model_guid'];
+    $dbInstance = db::getInstance();
+    $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
+    $imagesDb = R::getAll("SELECT * FROM models_gallery where girl_num = :value1 order by ID desc", [':value1' => $modelUser['ID']]);
+    $filteredByUserId = R::getAll("SELECT * FROM wp_usermeta where user_id = :value1", [':value1' => $modelUser['ID']]);
+    $images = [];
+    foreach ($imagesDb as $image) {
+        $imageNew['image_name'] = "/wp-content/uploads/files/" . $image['image_name'];
+        $images[] = $imageNew;
+    }
+    $cardNew['gallery_images'] = $images;
+    $cardNew['image'] = "/wp-content" . model_helper::getMetaValue("user_avatar", $filteredByUserId);
+    $cardNew['name'] = model_helper::getMetaValue("nickname", $filteredByUserId);
+    $cardNew['description'] =  model_helper::getMetaValue("description", $filteredByUserId);
+    $cardNew['guid'] = $modelUser["user_guid"];
+    $cardNew['phone'] = model_helper::getMetaValue("virtual_phone", $filteredByUserId);
+    $cardNew['age'] = model_helper::calculateAge(model_helper::getMetaValue("age", $filteredByUserId));
+    $languages = model_helper::getMetaValue("languages", $filteredByUserId);
+    $languagesArr = [];
+    if (model_helper::determineStringType($languages) == "serialized") {
+        $languagesArr = unserialize($languages);
+    } else {
+        $languagesArr[] = $languages;
+    }
+    $languagesArrRes = [];
+    foreach ($languagesArr as $lang) {
+        $langNew['image'] = model_helper::returnFlag($lang);
+        $langNew['name'] = $lang;
+        $languagesArrRes[] = $langNew;
+    }
+
+    $cardNew['languages'] = $languagesArrRes;
+
+    echo json_encode($cardNew);
+    die();
 } else if ($q_type == "log_out") {
     wp_logout(); // WordPress function to log out the current user
     // Redirect to the home page or login page after logging out
     wp_redirect(home_url());
     exit;
 }
-

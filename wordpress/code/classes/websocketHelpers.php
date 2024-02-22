@@ -200,12 +200,14 @@ class websocketHelpers
             $timeLeft = self::getTimeLeft($roomData->user_id);
             if ($timeLeft <= 30) {
                 echo $timeLeft . " sec left\n";
-                return "30 sec";
+                return "1";
             } else if ($timeLeft <= 0) {
                 echo "0 sec left\n";
-                return self::closeChat($roomData->room_guid, $roomData->user_id);
+                return 0;
+                //return self::closeChat($roomData->room_guid, $roomData->user_id);
             } else {
-                return "ok";
+                return 2;
+                //return "ok";
             }
 
         } catch (PDOException $e) {
@@ -264,6 +266,34 @@ class websocketHelpers
         }
     }
 
+
+    public static function send_message($clients,$senderData,$message,$sameUser){//1 =same user, 0=other user,2 =all users in room
+        foreach ($clients as $client) {
+            // Retrieve stored roomData for this client
+            $clientData = $clients->offsetGet($client);
+            // Check if this client is in the same room and not the sender
+            if($sameUser==1){
+                if ($clientData->room_guid == $senderData->room_guid && $clientData->user_guid == $senderData->user_guid) {
+                    $client->send($message);
+                    echo $message;
+                }
+            }
+            else if($sameUser==0){
+                if ($clientData->room_guid == $senderData->room_guid && $clientData->user_guid != $senderData->user_guid) {
+                    $client->send($message);
+                    echo $message;
+                }
+            }
+            else
+            {
+                if ($clientData->room_guid == $senderData->room_guid) {
+                    $client->send($message);
+                    echo $message;
+                }
+            }
+            
+        }
+    }
     public static function countUsersInRoom($clients, $senderData, $room_data) {
         $count_how_many_same_user_in_room = 0;
         $count_how_many_total_members_in_room = 0;
