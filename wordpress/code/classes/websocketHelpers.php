@@ -130,14 +130,31 @@ class websocketHelpers
     {
         $dbInstance = self::getInstance();
         $mysqli = $dbInstance->mysqli;
-        $query1 = "SELECT session_status FROM chat_time_use WHERE room_guid = ?";
+        $query1 = "SELECT now() as sqlTime,session_status,user_last_refresh,model_last_refresh FROM chat_time_use WHERE room_guid = ?";
         $stmt1 = $mysqli->prepare($query1);
         $stmt1->bind_param("s", $roomData->room_guid);
         $stmt1->execute();
         $result1 = $stmt1->get_result();
         $stmt1->close();
         $row = $result1->fetch_assoc();
-        return $row["session_status"];
+        if($roomData->is_model == 0)
+        {
+            if(($row["sqlTime"]-$row["model_last_refresh"])>10){
+                return 1;
+            }
+            else{
+                return $row["session_status"];
+            };
+        }
+        else{//model
+            if(($row["sqlTime"]-$row["user_last_refresh"])>10){
+                return 1;
+            }
+            else{
+                return $row["session_status"];
+            };
+        }
+        //return $row["session_status"];
     }
 
     public static function update_chat_time_use(roomData $roomData)
@@ -146,6 +163,15 @@ class websocketHelpers
         try {
             $instance = self::getInstance();
             // Update 'datein' and 'user_enter_chat' if conditions are met
+            $sql2="";
+            if($roomData->is_model == 0){
+                $sql2 = "UPDATE chat_time_use SET model_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+            }
+            else{
+                $sql2 = "UPDATE chat_time_use SET user_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+
+            }
+
             $sql2 = "UPDATE chat_time_use SET dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
             $stmt2 = $instance->pdo->prepare($sql2);
             $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
