@@ -16,3 +16,4 @@ require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/credit_card_payment.php'
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/CreditCard.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/PaymentData.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/CryptoHelper.php');
+require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/model_helper.php');

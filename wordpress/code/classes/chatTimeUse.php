@@ -42,8 +42,13 @@ class ChatTimeUse
             if (isset($user['ID'])) {
                 $user_id = $user['ID'];
 
+                // close old session that are not closed
+                $updateSql = "UPDATE chat_time_use SET session_status=1 WHERE girl_num=? AND user_id=?";
+                $updateParams = [$girl_num, $user_id];
+                R::exec($updateSql, $updateParams);
+
                 // Generate random string
-                $room_guid = helpers::generateRandomString(10);
+                $room_guid = uniqid();
 
                 $sql = "INSERT INTO chat_time_use (create_date, time_use, datein, dateout, girl_num, room_guid, user_id, multiply_sum, end_error, sessionMinTime, pricePerMinute, totalPrice, discount) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";

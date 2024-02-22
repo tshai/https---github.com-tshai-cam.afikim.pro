@@ -61,7 +61,7 @@ if ($q_type == "send_message") {
                     if (empty($documentCaption)) {
                         // The $documentCaption is empty
                         $modelUser = R::getRow('SELECT * FROM wp_users WHERE whatsapp_instance_id = ? LIMIT 1', [$instance_id]);
-                        $modelUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "xoo_ml_phone_display"]);
+                        $modelUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "virtual_phone"]);
                         $dbInstance = db::getInstance();
                         $message_room = R::getRow("SELECT * FROM wp_whatsapp_chats WHERE girl_num = :value1 AND user_num = :value2", [':value1' => $modelUser['ID'], ':value2' => $userMeta["user_id"]]);
                         $room_id = $message_room['room_id'];

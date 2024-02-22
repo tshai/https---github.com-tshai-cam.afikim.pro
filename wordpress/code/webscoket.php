@@ -3,6 +3,7 @@ define('PROJECT_ROOT', dirname(__DIR__) . '/'); // Assuming webscoket.php is one
 
 require_once(PROJECT_ROOT . '/code/classes/websocketHelpers.php');
 require_once(PROJECT_ROOT . '/vendor/autoload.php');
+
 use Ratchet\MessageComponentInterface;
 use Ratchet\ConnectionInterface;
 use Ratchet\Server\IoServer;
@@ -12,7 +13,8 @@ use React\Socket\SecureServer;
 use React\Socket\Server as ReactServer;
 use React\EventLoop\Factory as LoopFactory;
 
-class roomData{
+class roomData
+{
     public $room_guid;
     public $user_id;
     public $user_type;
@@ -22,23 +24,27 @@ class roomData{
 
 }
 
-class WebSocketServer implements MessageComponentInterface {
+class WebSocketServer implements MessageComponentInterface
+{
     private $logFile;
     private $clients;
 
 
-    public function __construct() {
+    public function __construct()
+    {
         $this->clients = new \SplObjectStorage();
         $this->logFile = __DIR__ . '/websocket_logs.txt'; // Log file path
     }
 
-    private function writeToLog($message) {
+    public function writeToLog($message)
+    {
         $logMessage = date('[Y-m-d H:i:s]') . ' ' . $message . PHP_EOL;
         file_put_contents($this->logFile, $logMessage, FILE_APPEND | LOCK_EX);
     }
 
 
-    public function onOpen(ConnectionInterface $conn) {
+    public function onOpen(ConnectionInterface $conn)
+    {
         // Initialize storage for this connection with a stdClass object
         $connectionData = new \stdClass();
         $connectionData->user_id = null; // Default value or null
@@ -50,16 +56,18 @@ class WebSocketServer implements MessageComponentInterface {
         $this->clients->attach($conn, $connectionData);
         echo "New connection! ({$conn->resourceId})\n";
     }
-    public function onMessage(ConnectionInterface $from, $msg) {
+
+    public function onMessage(ConnectionInterface $from, $msg)
+    {
         $data = json_decode($msg, true);
-        
+
         $websocketHelpers = websocketHelpers::getInstance();
         // Retrieve the sender's roomData
         $senderData = $this->clients->offsetGet($from);
-        $room_data=new roomData();
-        if($senderData->user_id === null){
-            $room_data=$websocketHelpers->build_user_object($data['user_guid'],$data['room_guid']);
-            if($room_data==null){
+        $room_data = new roomData();
+        if ($senderData->user_id === null) {
+            $room_data = $websocketHelpers->build_user_object($data['user_guid'], $data['room_guid']);
+            if ($room_data == null) {
                 foreach ($this->clients as $client) {
                     // Retrieve stored roomData for this client
                     $clientData = $this->clients->offsetGet($client);
@@ -67,44 +75,44 @@ class WebSocketServer implements MessageComponentInterface {
                         $client->send("{session_finished}");
                     }
                 }
-               echo "room_data==null\n";
-               die();
+                echo "room_data==null\n";
+                die();
+            } else {
+                $senderData->user_id = $room_data->user_id;
+                $senderData->user_guid = $room_data->user_guid;
+                $senderData->room_guid = $room_data->room_guid;
+                $senderData->user_type = $room_data->user_type;
+                $senderData->is_model = $room_data->is_model;
+                $senderData->last_date = date('Y-m-d H:i:s');
             }
-            else
-            {
-                $senderData->user_id=$room_data->user_id;
-                $senderData->user_guid=$room_data->user_guid;
-                $senderData->room_guid=$room_data->room_guid;
-                $senderData->user_type=$room_data->user_type;
-                $senderData->is_model=$room_data->is_model;
-                $senderData->last_date=date('Y-m-d H:i:s');
-            }
-        }
-        else
-        {
-            $room_data->user_id=$senderData->user_id;
-            $room_data->user_guid=$senderData->user_guid;
-            $room_data->room_guid=$senderData->room_guid;
-            $room_data->user_type=$senderData->user_type;
-            $room_data->is_model=$senderData->is_model;
+        } else {
+            $room_data->user_id = $senderData->user_id;
+            $room_data->user_guid = $senderData->user_guid;
+            $room_data->room_guid = $senderData->room_guid;
+            $room_data->user_type = $senderData->user_type;
+            $room_data->is_model = $senderData->is_model;
             //$room_data->last_date=$senderData->last_date;
         }
 
 
-        $count_how_many_same_user_in_room=0;
+        $count_how_many_same_user_in_room = 0;
+        $count_how_many_total_members_in_room = 0;
         foreach ($this->clients as $client) {
-            
+
             // Retrieve stored data for this client
             $clientData = $this->clients->offsetGet($client);
-            echo "clientData ".$clientData->room_guid."\n";
-            echo "room_data ".$room_data->room_guid."\n";
+            echo "clientData " . $clientData->room_guid . "\n";
+            echo "room_data " . $room_data->room_guid . "\n";
+            if ($clientData->room_guid == $senderData->room_guid) {
+                $count_how_many_total_members_in_room++;
+            }
             if ($clientData->room_guid == $room_data->room_guid && $clientData->user_guid == $room_data->user_guid) {
                 // Assuming you're checking for both user_guid and room_guid similarity
                 $count_how_many_same_user_in_room++;
-               
+
             }
         }
-        if($count_how_many_same_user_in_room>1){
+        if ($count_how_many_same_user_in_room > 1) {
             echo "count_how_many_same_user_in_room==" . $count_how_many_same_user_in_room . "\n";
             // Send a message to the client indicating more than one user is in the same room
             $client->send(json_encode(['message' => 'moreThanOneUser']));
@@ -115,8 +123,24 @@ class WebSocketServer implements MessageComponentInterface {
             // $websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
             // return;
         }
-
-        echo "room_data->user_id==".$room_data->user_id."\n";
+        echo "Count membres in room => " . $count_how_many_total_members_in_room;
+        if ($count_how_many_total_members_in_room < 2) {
+            if ($room_data->is_model == 0) {
+                foreach ($this->clients as $client) {
+                    // Retrieve stored roomData for this client
+                    $clientData = $this->clients->offsetGet($client);
+                    // Check if this client is in the same room and not the sender
+                    if ($clientData->room_guid == $senderData->room_guid) {
+                        $client->send("{\"error\":\"girlDiscounectInternet\"}");
+                        echo "girlDiscounectInternet 129";
+                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                        // break; // Remove or comment out if broadcasting to the entire room
+                    }
+                }
+                websocketHelpers::closeChat($room_data->room_guid, $room_data->user_id);
+            }
+        }
+        echo "room_data->user_id==" . $room_data->user_id . "\n";
         // if (is_string($senderData->last_date)) {
         //     $senderData->last_date = new DateTime($senderData->last_date);
         // }
@@ -139,11 +163,40 @@ class WebSocketServer implements MessageComponentInterface {
         //     $from->close();
         //     die();
         // }
-        
-        if($data['type']=="update"){
-                 //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+
+        if ($data['type'] == "update") {
+            //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
+
+            $sessionStatus = $websocketHelpers::getSessionStatus($room_data);
+            echo "session status => " . $sessionStatus;
+            if ($sessionStatus == "1") {
+                echo "sessionSts1 called 152";
+                foreach ($this->clients as $client) {
+                    // Retrieve stored roomData for this client
+                    $clientData = $this->clients->offsetGet($client);
+                    // Check if this client is in the same room and not the sender
+                    if ($clientData->room_guid == $senderData->room_guid) {
+                        $client->send("{\"error\":\"sessionSts1\"}");
+                        echo "sessionSts1 send 158";
+                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                        // break; // Remove or comment out if broadcasting to the entire room
+                    }
+                }
+            } else {
+                echo "success session sts 0 165";
                 $websocketHelpers->update_chat_time_use($room_data);
-                return;
+                foreach ($this->clients as $client) {
+                    // Retrieve stored roomData for this client
+                    $clientData = $this->clients->offsetGet($client);
+                    // Check if this client is in the same room and not the sender
+                    if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
+                        $client->send("{\"success\":\"0\"}");
+                        // If you wish to send the message to all clients in the room (excluding the sender), remove the break statement
+                        // break; // Remove or comment out if broadcasting to the entire room
+                    }
+                }
+            }
+            return;
         };
         // Update $senderData->last_date to the current time
 
@@ -156,7 +209,7 @@ class WebSocketServer implements MessageComponentInterface {
         foreach ($this->clients as $client) {
             // Retrieve stored roomData for this client
             $clientData = $this->clients->offsetGet($client);
-            
+
             // Check if this client is in the same room and not the sender
             if ($clientData->room_guid == $senderData->room_guid && $clientData->user_id != $senderData->user_id) {
                 $client->send($msg);
@@ -165,24 +218,27 @@ class WebSocketServer implements MessageComponentInterface {
             }
         }
     }
-    
-    public function onClose(ConnectionInterface $conn) {
+
+    public function onClose(ConnectionInterface $conn)
+    {
+        $this->writeToLog("onClose called");
         // Assuming you've stored connection details as suggested above
         if ($this->clients->contains($conn)) {
             $clientData = $this->clients->offsetGet($conn);
             $room_guid = $clientData->room_guid; // Access the stored room_guid
             $user_id = $clientData->user_id; // Access the stored room_guid
             $websocketHelpers = websocketHelpers::getInstance();
-            $websocketHelpers->closeChat($room_guid,$user_id);
+            $websocketHelpers->closeChat($room_guid, $user_id);
             // Now you can use $room_guid for logging or cleanup purposes
             echo "Connection {$conn->resourceId} with room ID $room_guid has disconnected user_id $user_id\n";
         }
-    
+
         // Don't forget to detach the client from storage
         $this->clients->detach($conn);
     }
 
-    public function onError(ConnectionInterface $conn, \Exception $e) {
+    public function onError(ConnectionInterface $conn, \Exception $e)
+    {
         $this->writeToLog("An error has occurred: {$e->getMessage()}");
         echo "An error has occurred: {$e->getMessage()}\n";
         $conn->close();
@@ -194,8 +250,8 @@ $loop = LoopFactory::create();
 
 // SSL options as an array
 $sslOptions = [
-    'local_cert'  => '/etc/letsencrypt/live/cam.afikim.pro/fullchain.pem',
-    'local_pk'    => '/etc/letsencrypt/live/cam.afikim.pro/privkey.pem',
+    'local_cert' => '/etc/letsencrypt/live/cam.afikim.pro/fullchain.pem',
+    'local_pk' => '/etc/letsencrypt/live/cam.afikim.pro/privkey.pem',
     'verify_peer' => false,
     'allow_self_signed' => true,
 ];

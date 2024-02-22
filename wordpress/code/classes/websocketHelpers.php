@@ -5,7 +5,8 @@ if (!defined('PROJECT_ROOT')) {
 }
 require_once(PROJECT_ROOT . '/code/webscoket.php');
 
-class websocketHelpers {
+class websocketHelpers
+{
     private static $instance = null;
     private $pdo;
     private $mysqli;
@@ -13,7 +14,9 @@ class websocketHelpers {
     private $easy_wordpress_user;
     private $easy_wordpress_password;
     private $easy_wordpress_database;
-    private function __construct() {
+
+    private function __construct()
+    {
         try {
             $this->host = '127.0.0.1';
             $this->easy_wordpress_user = 'wp_cam.afikim.pro';
@@ -22,14 +25,14 @@ class websocketHelpers {
             $charset = 'utf8mb4'; // Defaulting to utf8mb4 if not defined elsewhere
             $dsn = "mysql:host={$this->host};dbname={$this->easy_wordpress_database};charset=$charset";
             $options = [
-                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES   => false,
+                PDO::ATTR_EMULATE_PREPARES => false,
             ];
-    
+
             // Create the PDO connection
             $this->pdo = new PDO($dsn, $this->easy_wordpress_user, $this->easy_wordpress_password, $options);
-            
+
             // Create the mysqli connection
             $this->mysqli = new mysqli($this->host, $this->easy_wordpress_user, $this->easy_wordpress_password, $this->easy_wordpress_database);
         } catch (Exception $e) {
@@ -37,9 +40,10 @@ class websocketHelpers {
             die("DB Connection failed: " . $e->getMessage());
         }
     }
-    
 
-    public static function getInstance() {
+
+    public static function getInstance()
+    {
         if (self::$instance == null) {
             echo "37";
             self::$instance = new websocketHelpers();
@@ -48,14 +52,16 @@ class websocketHelpers {
     }
 
     // Optionally, you can add a method to close the database connection
-    public function closeConnection() {
+    public function closeConnection()
+    {
         $this->pdo = null;
     }
 
-    public static function build_user_object($user_guid, $room_guid){
-        $roomData=new roomData();
-        $roomData->room_guid=$room_guid;
-        $roomData->user_guid=$user_guid;
+    public static function build_user_object($user_guid, $room_guid)
+    {
+        $roomData = new roomData();
+        $roomData->room_guid = $room_guid;
+        $roomData->user_guid = $user_guid;
         $instance = self::getInstance();
         $sql2 = "SELECT session_status  FROM chat_time_use WHERE room_guid = ?";
         $stmt2 = $instance->pdo->prepare($sql2);
@@ -63,7 +69,7 @@ class websocketHelpers {
         $sessionStatus = $stmt2->fetchColumn();
 
 
-        if($sessionStatus == 1){
+        if ($sessionStatus == 1) {
             return null;
         };
         // Check if the user is a model
@@ -77,9 +83,7 @@ class websocketHelpers {
             $roomData->is_model = $userData['is_model'];
             $roomData->user_id = $userData['ID'];
             return $roomData;
-        }
-        else
-        {
+        } else {
             return null;
         }
     }
@@ -121,30 +125,43 @@ class websocketHelpers {
         //$mysqli->close();
         return $tt3;
     }
-    public static function update_chat_time_use(roomData $roomData) {
+
+    public static function getSessionStatus(roomData $roomData)
+    {
+        $dbInstance = self::getInstance();
+        $mysqli = $dbInstance->mysqli;
+        $query1 = "SELECT session_status FROM chat_time_use WHERE room_guid = ?";
+        $stmt1 = $mysqli->prepare($query1);
+        $stmt1->bind_param("s", $roomData->room_guid);
+        $stmt1->execute();
+        $result1 = $stmt1->get_result();
+        $stmt1->close();
+        $row = $result1->fetch_assoc();
+        return $row["session_status"];
+    }
+
+    public static function update_chat_time_use(roomData $roomData)
+    {
         echo "update\n";
         try {
             $instance = self::getInstance();
-                // Update 'datein' and 'user_enter_chat' if conditions are met
-                $sql2 = "UPDATE chat_time_use SET dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
-                $stmt2 = $instance->pdo->prepare($sql2);
-                $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
-                $stmt2->execute();
-                echo "update_chat_time_use: " . $roomData->user_id . " " . $roomData->room_guid . "\n";
-                $timeLeft = self::getTimeLeft($roomData->user_id);
-                if($timeLeft <= 30){
-                    echo $timeLeft." sec left\n";
-                    return "30 sec";
-                }
-                else if($timeLeft <= 0){
-                    echo "0 sec left\n";
-                    return self::closeChat($roomData->room_guid,$roomData->user_id);
-                }
-                else
-                {
-                    return "ok";
-                }
-            
+            // Update 'datein' and 'user_enter_chat' if conditions are met
+            $sql2 = "UPDATE chat_time_use SET dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+            $stmt2 = $instance->pdo->prepare($sql2);
+            $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
+            $stmt2->execute();
+            echo "update_chat_time_use: " . $roomData->user_id . " " . $roomData->room_guid . "\n";
+            $timeLeft = self::getTimeLeft($roomData->user_id);
+            if ($timeLeft <= 30) {
+                echo $timeLeft . " sec left\n";
+                return "30 sec";
+            } else if ($timeLeft <= 0) {
+                echo "0 sec left\n";
+                return self::closeChat($roomData->room_guid, $roomData->user_id);
+            } else {
+                return "ok";
+            }
+
         } catch (PDOException $e) {
             // Handle database error
             echo "Database error: " . $e->getMessage();
@@ -152,7 +169,9 @@ class websocketHelpers {
             return "Database error";
         }
     }
-    public static function userEnterChat(roomData $roomData) {
+
+    public static function userEnterChat(roomData $roomData)
+    {
         echo "userEnterChat\n";
         try {
             $instance = self::getInstance();
@@ -162,16 +181,16 @@ class websocketHelpers {
                 $stmt2 = $instance->pdo->prepare($sql2);
                 $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
                 $stmt2->execute();
-    
+
                 // Update 'dateout' regardless of 'user_enter_chat' status
                 $sql3 = "UPDATE chat_time_use SET dateout = NOW() WHERE room_guid = :room_guid AND session_status = 0";
                 $stmt3 = $instance->pdo->prepare($sql3);
                 $stmt3->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
                 $stmt3->execute();
-    
+
                 echo "User entered chat: " . $roomData->user_id . " " . $roomData->room_guid . "\n";
             }
-    
+
             return "ok";
         } catch (PDOException $e) {
             // Handle database error
@@ -179,25 +198,26 @@ class websocketHelpers {
             return "Database error";
         }
     }
-    public static function closeChat($room_guid,$user_id) {
+
+    public static function closeChat($room_guid, $user_id)
+    {
         echo "closeChat\n"; // Updated for clarity
         try {
-                    $instance = self::getInstance();
-                    $sql3 = "UPDATE chat_time_use SET dateout = NOW(), time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()), session_status = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_id = :user_id AND user_enter_chat = 1";
-                    $stmt3 = $instance->pdo->prepare($sql3);
-                    $stmt3->bindParam(':room_guid', $room_guid, PDO::PARAM_STR);
-                    $stmt3->bindParam(':user_id', $user_id, PDO::PARAM_INT);
-                    $stmt3->execute();
-                    //echo "UPDATE chat_time_use SET dateout = NOW(), time_use=DATEDIFF(NOW(), dateIn), session_status = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_id = :user_id";
-                    echo "Chat closed for user: " . $user_id . " in room: " . $room_guid . "\n";
-                return "ok";
+            $instance = self::getInstance();
+            $sql3 = "UPDATE chat_time_use SET dateout = NOW(), time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()), session_status = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+            $stmt3 = $instance->pdo->prepare($sql3);
+            $stmt3->bindParam(':room_guid', $room_guid, PDO::PARAM_STR);
+            $stmt3->execute();
+            //echo "UPDATE chat_time_use SET dateout = NOW(), time_use=DATEDIFF(NOW(), dateIn), session_status = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_id = :user_id";
+            echo "Chat closed for user: " . $user_id . " in room: " . $room_guid . "\n";
+            return "ok";
         } catch (PDOException $e) {
             echo "Database error: " . $e->getMessage();
             error_log("Database error: " . $e->getMessage());
             return "Database error"; // Consider a more structured error response
         }
     }
-    
+
 }
 
 ?>

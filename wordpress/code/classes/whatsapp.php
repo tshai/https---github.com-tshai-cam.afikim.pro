@@ -42,7 +42,7 @@ class whatsapp
             $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,girl_read) VALUES (?, ?, ?, ?,?,?,?)";
             $stmtChatsInsert = $mysqli->prepare($sqlChatsInsert);
             // Bind parameters
-            $stmtChatsInsert->bind_param("iissss", $girlNum, $userNum, $date, $room_id, $date, $substringMessage, $girl_read);
+            $stmtChatsInsert->bind_param("iissssi", $girlNum, $userNum, $date, $room_id, $date, $substringMessage, $girl_read);
             if (!$stmtChatsInsert->execute()) {
                 errors::addError("Error: " . $stmtChatsInsert->error, "classes/whatsapp.php line 43");
             }
@@ -74,7 +74,6 @@ class whatsapp
             // Create a prepared statement
             $sql = "INSERT INTO wp_income_messages (date_in, message_content, user_id) VALUES (?, ?, ?)";
             // Create a prepared statement
-            $stmt = $mysqli->prepare($sql);
             $stmt = $mysqli->prepare($sql);
             if ($stmt === false) {
                 // Log the error

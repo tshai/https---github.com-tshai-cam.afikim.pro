@@ -15,17 +15,18 @@ if ($q_type == "start_chat") {
     if ($time_left > 20) {
         $model_guid = $_REQUEST['model_guid'];
         $dbInstance = db::getInstance();
-        $modelUserDb = R::load('wp_users', $model_guid);
-        $modelUser = json_decode($modelUserDb, true);
+        $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
+        errors::addError(json_encode($modelUser), "20");
         $whatsapp = new whatsapp($modelUser['whatsapp_instance_id']);
         // send message to user
-        $newMessageToUser = "hello from girl " . $modelUser['user_login'];
-        $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$current_user->ID, "xoo_ml_phone_display"]);
+        $modelMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "nickname"]);
+        $newMessageToUser = "hello from girl " . $modelMetaName['meta_value'];
+        $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$current_user->ID, "phone"]);
         $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $newMessageToUser);
         whatsapp::insertMessageToWhatsApp($newMessageToUser, 0, $current_user->ID, $modelUser['ID'], 1);
         //send message to model
         $newMessageToGirl = "hello from user " . $current_user->user_login;
-        $girlMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "xoo_ml_phone_display"]);
+        $girlMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "virtual_phone"]);
         $whatsappResGirl = $whatsapp->sendMessage($girlMetaPhone["meta_value"], $newMessageToGirl);
         whatsapp::insertMessageToWhatsApp($newMessageToGirl, 0, $current_user->ID, $modelUser['ID'], 0);
         ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $current_user->ID, 0, 0);
@@ -35,17 +36,46 @@ if ($q_type == "start_chat") {
     }
     die();
 } else if ($q_type == "models_list") {
-    $models = [
-        [
-            "name" => "John Doe",
-            "description" => "Software Engineer",
-            "guid" => 73,
-            "phone" => "+972535316742",
-            "image" => "https://cam.afikim.pro/wp-content/uploads/2024/01/One-Line-Art-Woman-Body-Phone-Wallpaper.png"
-        ]
-    ];
+    $dbInstance = db::getInstance();
+    $modelsSql = "SELECT * FROM wp_users WHERE is_model=? order by ID desc";
+    $models = R::getAll($modelsSql, [1]);
+    $modelIds = array_map(function ($model) {
+        return $model['ID'];
+    }, $models);
+    $placeholders = implode(',', array_fill(0, count($modelIds), '?'));
+    $modelsMetaSql = "SELECT * FROM wp_usermeta WHERE user_id IN ($placeholders)";
+    $modelsMeta = R::getAll($modelsMetaSql, $modelIds);
+    $modelResponse = [];
+    foreach ($models as $model) {
+        $user_id = $model['ID'];
+        $filteredByUserId = array_filter($modelsMeta, function ($item) use ($user_id) {
+            return $item['user_id'] === $user_id;
+        });
+        $cardNew['image'] = "/wp-content" . model_helper::getMetaValue("user_avatar", $filteredByUserId);
+        $cardNew['name'] = model_helper::getMetaValue("nickname", $filteredByUserId);
+        $description = model_helper::getMetaValue("description", $filteredByUserId);
+        $cardNew['description'] = (strlen($description) > 100 ? substr($description, 0, 100) . "..." : $description);
+        $cardNew['guid'] = $model["user_guid"];
+        $cardNew['phone'] = model_helper::getMetaValue("virtual_phone", $filteredByUserId);
+        // $cardNew['age'] = model_helper::calculateAge(model_helper::getMetaValue("age", $filteredByUserId));
+        $languages = model_helper::getMetaValue("languages", $filteredByUserId);
+        $languagesArr = [];
+        if (model_helper::determineStringType($languages) == "serialized") {
+            $languagesArr = unserialize($languages);
+        } else {
+            $languagesArr[] = $languages;
+        }
+        $languagesArrRes = [];
+        foreach ($languagesArr as $lang) {
+            $langNew['image'] = model_helper::returnFlag($lang);
+            $langNew['name'] = $lang;
+            $languagesArrRes[] = $langNew;
+        }
 
-    echo json_encode($models);
+        $cardNew['languages'] = $languagesArrRes;
+        $modelResponse[] = $cardNew;
+    }
+    echo json_encode($modelResponse);
     die();
 } else if ($q_type == "models_chats") {
     $model_user = wp_get_current_user();
@@ -63,7 +93,9 @@ if ($q_type == "start_chat") {
             $cardNew['last_time_update'] = $parsedDate->format('d/m/y');
         }
         $cardNew['room_id'] = $chat['room_id'];
+        $user = R::getRow("SELECT * FROM wp_users WHERE ID = :value", [':value' => $chat["user_num"]]);
         $cardNew['name'] = $chat['user_num'];
+        $cardNew['user_guid'] = $user['user_guid'];
         $cardNew['is_read'] = $chat['girl_read'];
         $cardNew['newest_message'] = $chat['newest_message_cut'];
         $cardNew['image'] = '/wp-content/uploads/2024/02/user.png';
@@ -93,7 +125,7 @@ if ($q_type == "start_chat") {
         $cardNew['message'] = $message['message'];
         $cardNew['message_type'] = $message['message_type'];
         $cardNew['girl_send'] = $message['girl_send'];
-        $cardNew['file_name'] = $message['file_name'];
+        $cardNew['file_name'] = "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $message['file_name'];
         $messagesResponse[] = $cardNew;
     }
     $response = new stdClass();
@@ -107,12 +139,12 @@ if ($q_type == "start_chat") {
     $room_guid = $_POST['room_guid'];
     $other_user_guid = $_POST['other_user_guid'];
     $user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $other_user_guid]);
-    $other_user_url = "https://cam.afikim.pro/video-chat?room_guid=" . $room_guid . "&other_user_guid=" . $other_user_guid
-        . "&user_type=customer&user_guid=" . $model_user->user_guid;
-    $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "xoo_ml_phone_display"]);
+    $other_user_url = "https://cam.afikim.pro/video-chat?room_guid=" . $room_guid . "&other_user_guid=" . $model_user->user_guid
+        . "&user_type=customer&user_guid=" . $other_user_guid;
+    $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "phone"]);
     $whatsapp = new whatsapp($model_user->whatsapp_instance_id);
-//    $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $other_user_url);
-//    whatsapp::insertMessageToWhatsApp($other_user_url, 3, $user["ID"], $model_user->ID, 1);
+    $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $other_user_url);
+    whatsapp::insertMessageToWhatsApp($other_user_url, 3, $user["ID"], $model_user->ID, 1);
     echo '{"res":"' . $other_user_url . '"}';
     die();
 } else if ($q_type == "send_message_to_user") {
@@ -123,7 +155,7 @@ if ($q_type == "start_chat") {
     $message_room = R::getRow("SELECT * FROM wp_whatsapp_chats WHERE room_id = :value1 AND girl_num = :value2", [':value1' => $room_id, ':value2' => $model_user->ID]);
     $messageText = htmlspecialchars($message);
     $whatsapp = new whatsapp($model_user->whatsapp_instance_id);
-    $customerUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$message_room['user_num'], "xoo_ml_phone_display"]);
+    $customerUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$message_room['user_num'], "phone"]);
     if (!empty($_FILES)) {
         $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/";
         $extension = pathinfo($_FILES["file"]['name'], PATHINFO_EXTENSION);
@@ -143,6 +175,145 @@ if ($q_type == "start_chat") {
     }
 
     echo '{"res":"ok"}';
+    die();
+} else if ($q_type == "user_statistic") {
+    $customer_user = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $action = $_REQUEST['action'];
+    $draw = $_REQUEST["draw"];
+    $count = $_REQUEST["length"];
+    $skip = $_REQUEST["start"];
+    if ($action == "payments") {
+        $payments = R::getAll("SELECT * FROM card_cam WHERE time_expire <> 0.00 AND user_id = :value1 AND user_ask_to_delete = 0 AND TIMESTAMPDIFF(MONTH, order_day, CURDATE()) < 6 ORDER BY ID DESC", [':value1' => $customer_user->ID]);
+        $paymentsRes = [];
+        foreach ($payments as $payment) {
+            $dateString = $payment['order_day'];
+            $parsedDate = new DateTime($dateString);
+            $cardNew['date_in'] = $parsedDate->format('d/m/y H:i');
+            $cardNew['price'] = $payment['price'];
+            $cardNew['ipaddress'] = $payment['ipaddress'];
+            $cardNew['time_expire'] = $payment['time_expire'];
+            $cardNew['lastdigits'] = $payment['lastdigits'];
+            $cardNew['transactionProcessor'] = $payment['transactionProcessor'];
+            $paymentsRes[] = $cardNew;
+        }
+        $countRows = count($paymentsRes);
+        $paymentsRes = array_slice($paymentsRes, $skip, $count);
+        $responseClss = new stdClass();
+        $responseClss->data = $paymentsRes;
+        $responseClss->draw = $draw;
+        $responseClss->recordsTotal = $countRows;
+        $responseClss->recordsFiltered = $countRows;
+        echo json_encode($responseClss);
+    } else if ($action == "chats") {
+        $chat_time_uses = R::getAll("SELECT * FROM chat_time_use where user_id=:value1 and user_ask_to_delete=0 and time_use<>0 order by ID desc", [':value1' => $customer_user->ID]);
+        $chat_time_use_res = [];
+        foreach ($chat_time_uses as $chat_time_use) {
+            $dateInString = $chat_time_use['datein'];
+            $parsedDateIn = new DateTime($dateInString);
+            $cardNew['date_in'] = $parsedDateIn->format('d/m/y H:i:s');
+            if ($chat_time_use['send_message'] == "0") {
+                $dateOutString = $chat_time_use['dateout'];
+                $parsedDateOut = new DateTime($dateOutString);
+                $cardNew['date_out'] = $parsedDateOut->format('d/m/y H:i:s');
+            } else {
+                $cardNew['date_out'] = "N/A";
+            }
+            $cardNew['time_use'] = $chat_time_use['time_use'];
+            $modelUserMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$chat_time_use['girl_num'], "nickname"]);
+            $cardNew['modelName'] = $modelUserMetaName['meta_value'];
+            $send_message = $chat_time_use["send_message"];
+            $cardNew['chat_type'] = model_helper::getChatTipe($chat_time_use['send_message']);
+            $chat_time_use_res[] = $cardNew;
+        }
+
+        $countRows2 = count($chat_time_use_res);
+        $chat_time_use_res = array_slice($chat_time_use_res, $skip, $count);
+        $responseClss = new stdClass();
+        $responseClss->data = $chat_time_use_res;
+        $responseClss->draw = $draw;
+        $responseClss->recordsTotal = $countRows2;
+        $responseClss->recordsFiltered = $countRows2;
+        echo json_encode($responseClss);
+    }
+    die();
+} else if ($q_type == "model_statistic") {
+    $modelUser = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $startDate = $_REQUEST['startDate'];
+    $endDate = $_REQUEST['endDate'];
+    $draw = $_REQUEST["draw"];
+    $count = $_REQUEST["length"];
+    $skip = $_REQUEST["start"];
+    $totalTimeUseInSeconds = R::getRow("SELECT IFNULL(SUM(time_use), 0) AS time_use FROM chat_time_use WHERE girl_num = :value1 AND datein >= :value2 AND datein <= DATE_ADD(:value3, INTERVAL 1 DAY)", [':value1' => $modelUser->ID, ':value2' => $startDate, ':value3' => $endDate]);
+    $chat_time_uses = R::getAll("SELECT * FROM chat_time_use where time_use>0 and girl_num = :value1 AND datein >= :value2 AND datein <= DATE_ADD(:value3, INTERVAL 1 DAY) order by ID desc", [':value1' => $modelUser->ID, ':value2' => $startDate, ':value3' => $endDate]);
+    $chat_time_use_res = [];
+    foreach ($chat_time_uses as $chat_time_use) {
+        $dateInString = $chat_time_use['datein'];
+        $parsedDateIn = new DateTime($dateInString);
+        $cardNew['date_in'] = $parsedDateIn->format('d/m/y H:i:s');
+        if ($chat_time_use['send_message'] == "0") {
+            $dateOutString = $chat_time_use['dateout'];
+            $parsedDateOut = new DateTime($dateOutString);
+            $cardNew['date_out'] = $parsedDateOut->format('d/m/y H:i:s');
+        } else {
+            $cardNew['date_out'] = "N/A";
+        }
+        $cardNew['time_use'] = $chat_time_use['time_use'];
+        $userMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$chat_time_use['user_id'], "nickname"]);
+        $cardNew['user_name'] = $userMetaName['meta_value'];
+        $send_message = $chat_time_use["send_message"];
+        $cardNew['chat_type'] = model_helper::getChatTipe($chat_time_use['send_message']);
+        $chat_time_use_res[] = $cardNew;
+    }
+
+    $countRows2 = count($chat_time_use_res);
+    $chat_time_use_res = array_slice($chat_time_use_res, $skip, $count);
+    $responseClss = new stdClass();
+    $responseClss->totalTimeUseInSeconds = $totalTimeUseInSeconds;
+    $responseClss->data = $chat_time_use_res;
+    $responseClss->draw = $draw;
+    $responseClss->recordsTotal = $countRows2;
+    $responseClss->recordsFiltered = $countRows2;
+    echo json_encode($responseClss);
+    die();
+} else if ($q_type == "upload_image_profile") {
+    if (!empty($_FILES)) {
+        $current_user = wp_get_current_user();
+        $dbInstance = db::getInstance();
+        $action = $_REQUEST['action'];
+        if ($action == "avatar") {
+            $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
+            $sub_dir = "/uploads/files/";
+            $new_file_name = uniqid() . '.png';
+            $target_file = $target_dir . $sub_dir . $new_file_name;
+            $db_file = $sub_dir . $new_file_name;
+            move_uploaded_file($_FILES["avatar_image"]["tmp_name"], $target_file);
+            model_helper::insertOrUpdateUserAvatar($db_file, $current_user->ID);
+            echo 'avatar update successfully';
+        } else if ($action == "gallery") {
+            $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
+            $sub_dir = "/uploads/files/";
+            $new_file_name = uniqid() . '.png';
+            $target_file = $target_dir . $sub_dir . $new_file_name;
+            $db_file = $sub_dir . $new_file_name;
+            move_uploaded_file($_FILES["image"]["tmp_name"], $target_file);
+            model_helper::insertModelImageToGallery($new_file_name, $current_user->ID);
+            echo 'image upload successfully';
+        }
+    }
+    die();
+} else if ($q_type == "list_images_gallery") {
+    $current_user = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $imagesDb = R::getAll("SELECT * FROM models_gallery where girl_num = :value1 order by ID desc", [':value1' => $current_user->ID]);
+    $images = [];
+    foreach ($imagesDb as $image) {
+        $cardNew['image_name'] = "/wp-content/uploads/files/" . $image['image_name'];
+        $images[] = $cardNew;
+    }
+
+    echo json_encode($images);
     die();
 } else if ($q_type == "log_out") {
     wp_logout(); // WordPress function to log out the current user
