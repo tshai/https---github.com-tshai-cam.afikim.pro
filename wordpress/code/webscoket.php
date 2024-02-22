@@ -13,16 +13,7 @@ use React\Socket\SecureServer;
 use React\Socket\Server as ReactServer;
 use React\EventLoop\Factory as LoopFactory;
 
-class roomData
-{
-    public $room_guid;
-    public $user_id;
-    public $user_type;
-    public $user_guid;
-    public $is_model;
-    public $action;
 
-}
 
 class WebSocketServer implements MessageComponentInterface
 {
@@ -39,7 +30,7 @@ class WebSocketServer implements MessageComponentInterface
     public function writeToLog($message)
     {
         $logMessage = date('[Y-m-d H:i:s]') . ' ' . $message . PHP_EOL;
-        file_put_contents($this->logFile, $logMessage, FILE_APPEND | LOCK_EX);
+        //file_put_contents($this->logFile, $logMessage, FILE_APPEND | LOCK_EX);
     }
 
 
@@ -60,12 +51,11 @@ class WebSocketServer implements MessageComponentInterface
     public function onMessage(ConnectionInterface $from, $msg)
     {
         $data = json_decode($msg, true);
-
         $websocketHelpers = websocketHelpers::getInstance();
         // Retrieve the sender's roomData
         $senderData = $this->clients->offsetGet($from);
         $room_data = new roomData();
-        if ($senderData->user_id === null) {
+        if ($senderData->user_id === null) {//the user is not identified
             $room_data = $websocketHelpers->build_user_object($data['user_guid'], $data['room_guid']);
             if ($room_data == null) {
                 foreach ($this->clients as $client) {
@@ -78,22 +68,11 @@ class WebSocketServer implements MessageComponentInterface
                 echo "room_data==null\n";
                 die();
             } else {
-                $senderData->user_id = $room_data->user_id;
-                $senderData->user_guid = $room_data->user_guid;
-                $senderData->room_guid = $room_data->room_guid;
-                $senderData->user_type = $room_data->user_type;
-                $senderData->is_model = $room_data->is_model;
-                $senderData->last_date = date('Y-m-d H:i:s');
+                websocketHelpers::updateSenderData($senderData, $room_data);
             }
         } else {
-            $room_data->user_id = $senderData->user_id;
-            $room_data->user_guid = $senderData->user_guid;
-            $room_data->room_guid = $senderData->room_guid;
-            $room_data->user_type = $senderData->user_type;
-            $room_data->is_model = $senderData->is_model;
-            //$room_data->last_date=$senderData->last_date;
+            websocketHelpers::updateRoomData($room_data, $senderData);
         }
-
 
         $count_how_many_same_user_in_room = 0;
         $count_how_many_total_members_in_room = 0;
@@ -141,28 +120,7 @@ class WebSocketServer implements MessageComponentInterface
             }
         }
         echo "room_data->user_id==" . $room_data->user_id . "\n";
-        // if (is_string($senderData->last_date)) {
-        //     $senderData->last_date = new DateTime($senderData->last_date);
-        // }
-        // // Create a DateTime object for the current time
-        // $now = new DateTime();
-        // // Calculate the difference
-        // $interval = $now->diff($senderData->last_date);
-        // // Calculate total seconds (note: this does not account for leap seconds)
-        // $seconds = ($interval->days * 24 * 60 * 60) + // Days to seconds
-        //         ($interval->h * 60 * 60) +         // Hours to seconds
-        //         ($interval->i * 60) +              // Minutes to seconds
-        //         $interval->s;                      // Seconds
-
-        // if ($seconds > 10) {
-        //     echo "last_date == $seconds\n";
-        //     $this->clients->detach($from);
-        //     // You might want to inform the user before closing the connection
-        //     $from->send("Your session has expired due to inactivity.");
-        //     // Close the connection
-        //     $from->close();
-        //     die();
-        // }
+        
 
         if ($data['type'] == "update") {
             //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object
@@ -182,6 +140,10 @@ class WebSocketServer implements MessageComponentInterface
                         // break; // Remove or comment out if broadcasting to the entire room
                     }
                 }
+
+                $websocketHelpers->closeChat($room_data->room_guid,$room_data->user_id);
+                // Now you can use $room_guid for logging or cleanup purposes
+                //echo "Connection {$conn->resourceId} with room ID $room_guid has disconnected user_id $user_id\n";
             } else {
                 echo "success session sts 0 165";
                 $websocketHelpers->update_chat_time_use($room_data);

@@ -126,37 +126,56 @@ class websocketHelpers
         return $tt3;
     }
 
-    public static function getSessionStatus(roomData $roomData)
-    {
+    public static function getSessionStatus(roomData $roomData) {
         $dbInstance = self::getInstance();
         $mysqli = $dbInstance->mysqli;
-        $query1 = "SELECT now() as sqlTime,session_status,user_last_refresh,model_last_refresh FROM chat_time_use WHERE room_guid = ?";
-        $stmt1 = $mysqli->prepare($query1);
-        $stmt1->bind_param("s", $roomData->room_guid);
-        $stmt1->execute();
-        $result1 = $stmt1->get_result();
-        $stmt1->close();
-        $row = $result1->fetch_assoc();
-        if($roomData->is_model == 0)
-        {
-            if(($row["sqlTime"]-$row["model_last_refresh"])>10){
-                return 1;
+        $query = "SELECT now() as sqlTime, user_enter_chat, session_status, user_last_refresh, model_last_refresh 
+                  FROM chat_time_use 
+                  WHERE room_guid = ?";
+        
+        if ($stmt = $mysqli->prepare($query)) {
+            $stmt->bind_param("s", $roomData->room_guid);
+            if ($stmt->execute()) {
+                $result = $stmt->get_result();
+                $stmt->close();
+                
+                if ($row = $result->fetch_assoc()) {
+                    // Assuming user_enter_chat is a flag (0 or 1)
+                    if ($row["user_enter_chat"] == 1) {
+                        $sqlTime = strtotime($row["sqlTime"]);
+                        $modelLastRefresh = strtotime($row["model_last_refresh"]);
+                        $userLastRefresh = strtotime($row["user_last_refresh"]);
+                        
+                        // Determine which last_refresh time to compare based on is_model flag
+                        $lastRefresh = $roomData->is_model == 0 ? $modelLastRefresh : $userLastRefresh;
+                                            
+                        // Compare and return based on the 10-second rule
+                        if ($sqlTime - $lastRefresh > 10) {
+                            echo "Session timeout detected\n";
+                            return 1;
+                        } else {
+                            echo "Session active\n";
+                            return $row["session_status"];
+                        }
+                    } else {
+                        echo "User has not entered the chat\n";
+                        return 0; // Adjust based on your logic
+                    }
+                } else {
+                    echo "No matching records found for room_guid: " . $roomData->room_guid . "\n";
+                    return 0; // Adjust based on your logic
+                }
+            } else {
+                $stmt->close();
+                echo "Query execution failed\n";
+                return 0; // Adjust based on your logic
             }
-            else{
-                return $row["session_status"];
-            };
+        } else {
+            echo "Query preparation failed\n";
+            return 0; // Adjust based on your logic
         }
-        else{//model
-            if(($row["sqlTime"]-$row["user_last_refresh"])>10){
-                return 1;
-            }
-            else{
-                return $row["session_status"];
-            };
-        }
-        //return $row["session_status"];
     }
-
+    
     public static function update_chat_time_use(roomData $roomData)
     {
         echo "update\n";
@@ -164,7 +183,7 @@ class websocketHelpers
             $instance = self::getInstance();
             // Update 'datein' and 'user_enter_chat' if conditions are met
             $sql2="";
-            if($roomData->is_model == 0){
+            if($roomData->is_model == 1){
                 $sql2 = "UPDATE chat_time_use SET model_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
             }
             else{
@@ -172,7 +191,8 @@ class websocketHelpers
 
             }
 
-            $sql2 = "UPDATE chat_time_use SET dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+
+            //$sql2 = "UPDATE chat_time_use SET dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
             $stmt2 = $instance->pdo->prepare($sql2);
             $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
             $stmt2->execute();
@@ -203,7 +223,7 @@ class websocketHelpers
             $instance = self::getInstance();
             if ($roomData->is_model == 0) {
                 // Update 'datein' and 'user_enter_chat' if conditions are met
-                $sql2 = "UPDATE chat_time_use SET datein = NOW(), user_enter_chat = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 0";
+                $sql2 = "UPDATE chat_time_use SET datein = NOW(),user_last_refresh= NOW(),dateout = NOW(), user_enter_chat = 1 WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 0";
                 $stmt2 = $instance->pdo->prepare($sql2);
                 $stmt2->bindParam(':room_guid', $roomData->room_guid, PDO::PARAM_STR);
                 $stmt2->execute();
@@ -244,6 +264,55 @@ class websocketHelpers
         }
     }
 
+    public static function countUsersInRoom($clients, $senderData, $room_data) {
+        $count_how_many_same_user_in_room = 0;
+        $count_how_many_total_members_in_room = 0;
+        
+        foreach ($clients as $client) {
+            // Retrieve stored data for this client
+            $clientData = $clients->offsetGet($client);
+            echo "clientData " . $clientData->room_guid . "\n";
+            echo "room_data " . $room_data->room_guid . "\n";
+            
+            if ($clientData->room_guid == $senderData->room_guid) {
+                $count_how_many_total_members_in_room++;
+            }
+            
+            if ($clientData->room_guid == $room_data->room_guid && $clientData->user_guid == $room_data->user_guid) {
+                // Assuming you're checking for both user_guid and room_guid similarity
+                $count_how_many_same_user_in_room++;
+            }
+        }
+        
+        return [
+            'same_user_count' => $count_how_many_same_user_in_room,
+            'total_member_count' => $count_how_many_total_members_in_room
+        ];
+    }
+    public static function updateSenderData($senderData, $room_data) {
+        $senderData->user_id = $room_data->user_id;
+        $senderData->user_guid = $room_data->user_guid;
+        $senderData->room_guid = $room_data->room_guid;
+        $senderData->user_type = $room_data->user_type;
+        $senderData->is_model = $room_data->is_model;
+        $senderData->last_date = date('Y-m-d H:i:s');
+    }
+    public static function updateRoomData($room_data, $senderData) {
+        $room_data->user_id = $senderData->user_id;
+        $room_data->user_guid = $senderData->user_guid;
+        $room_data->room_guid = $senderData->room_guid;
+        $room_data->user_type = $senderData->user_type;
+        $room_data->is_model = $senderData->is_model;
+    }
 }
+class roomData
+{
+    public $room_guid;
+    public $user_id;
+    public $user_type;
+    public $user_guid;
+    public $is_model;
+    public $action;
 
+}
 ?>
