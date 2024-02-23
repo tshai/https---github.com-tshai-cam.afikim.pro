@@ -184,7 +184,7 @@ class websocketHelpers
             // Update 'datein' and 'user_enter_chat' if conditions are met
             $sql2="";
             if($roomData->is_model == 1){
-                $sql2 = "UPDATE chat_time_use SET model_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";
+                $sql2 = "UPDATE chat_time_use SET model_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0";
             }
             else{
                 $sql2 = "UPDATE chat_time_use SET user_last_refresh= NOW(),dateout = NOW(),time_use = TIMESTAMPDIFF(SECOND, dateIn, NOW()) WHERE room_guid = :room_guid AND session_status = 0 AND user_enter_chat = 1";

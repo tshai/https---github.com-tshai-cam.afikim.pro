@@ -66,7 +66,8 @@ class WebSocketServer implements MessageComponentInterface
                     }
                 }
                 echo "room_data==null\n";
-                die();
+                return;
+                //die();
             } else {
                 websocketHelpers::updateSenderData($senderData, $room_data);
             }
@@ -125,7 +126,14 @@ class WebSocketServer implements MessageComponentInterface
             }
         }
         echo "room_data->user_id==" . $room_data->user_id . "\n";
-        
+        if ($data['type'] == "disconnect") {
+            echo "disconnect called 139";
+            websocketHelpers::send_message($this->clients, $senderData, "{\"error\":\"sessionSts1\"}",2);
+            $this->onClose($from);
+            // Now you can use $room_guid for logging or cleanup purposes
+            echo "Connection {$from->resourceId} with room ID $room_data->room_guid has disconnected user_id $room_data->user_id\n";
+            return;
+        }
 
         if ($data['type'] == "update") {
             //$senderData->last_date = $now->format('Y-m-d H:i:s'); // Store as DateTime object

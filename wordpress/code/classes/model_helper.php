@@ -5,7 +5,6 @@ class model_helper
 {
     public function __construct()
     {
-
     }
 
     public static function getChatTipe($send_mesage)
@@ -22,7 +21,14 @@ class model_helper
         $avatar = current(array_filter($filteredByUserId, function ($item) use ($meta_key) {
             return $item['meta_key'] === $meta_key;
         }));
-        return $avatar["meta_value"];
+
+        // Check if $avatar is not false and not empty
+        if ($avatar !== false && !empty($avatar)) {
+            return $avatar["meta_value"];
+        } else {
+            // Handle the case where no item was found. You might return a default value or null.
+            return ""; // Or return a default avatar or any other default value as needed
+        }
     }
 
     public static function determineStringType($string)
@@ -101,7 +107,6 @@ class model_helper
             errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
             return "Exception: " . $ex->getMessage(); // Consider how you want to handle exceptions: log, return, or throw again.
         }
-
     }
 
     public static function insertOrUpdateUserAvatar($imageLink, $userNum)

@@ -94,11 +94,13 @@ if ($q_type == "start_chat") {
         }
         $cardNew['room_id'] = $chat['room_id'];
         $user = R::getRow("SELECT * FROM wp_users WHERE ID = :value", [':value' => $chat["user_num"]]);
-        $cardNew['name'] = $chat['user_num'];
+        $filteredByUserId = R::getAll("SELECT * FROM wp_usermeta where user_id = :value1", [':value1' => $user['ID']]);
+        $cardNew['name'] = model_helper::getMetaValue("nickname", $filteredByUserId);
         $cardNew['user_guid'] = $user['user_guid'];
         $cardNew['is_read'] = $chat['girl_read'];
         $cardNew['newest_message'] = $chat['newest_message_cut'];
-        $cardNew['image'] = '/wp-content/uploads/2024/02/user.png';
+        $hasImage = model_helper::getMetaValue("user_avatar", $filteredByUserId);
+        $cardNew['image'] = $hasImage == "" ? "/wp-content/uploads/2024/02/user.png" : "/wp-content" . $hasImage;
         $chatsResponse[] = $cardNew;
     }
     echo json_encode($chatsResponse);
@@ -130,7 +132,8 @@ if ($q_type == "start_chat") {
     }
     $response = new stdClass();
     $response->messages = $messagesResponse;
-    $response->name = $user['ID'];
+    $filteredByUserId = R::getAll("SELECT * FROM wp_usermeta where user_id = :value1", [':value1' => $user['ID']]);
+    $response->name = model_helper::getMetaValue("nickname", $filteredByUserId);
     $response->user_guid = $user['user_guid'];
     echo json_encode($response);
     die();
@@ -326,7 +329,8 @@ if ($q_type == "start_chat") {
         $images[] = $imageNew;
     }
     $cardNew['gallery_images'] = $images;
-    $cardNew['image'] = "/wp-content" . model_helper::getMetaValue("user_avatar", $filteredByUserId);
+    $hasImage = model_helper::getMetaValue("user_avatar", $filteredByUserId);
+    $cardNew['image'] = $hasImage == "" ? "/wp-content/uploads/2024/02/user.png" : "/wp-content" . $hasImage;
     $cardNew['name'] = model_helper::getMetaValue("nickname", $filteredByUserId);
     $cardNew['description'] =  model_helper::getMetaValue("description", $filteredByUserId);
     $cardNew['guid'] = $modelUser["user_guid"];
