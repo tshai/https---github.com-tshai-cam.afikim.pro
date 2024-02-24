@@ -134,12 +134,17 @@ class whatsapp
     public static function getValueFromJsonNested($key1, $key2, $key3, $parsedMessageWithFile)
     {
         $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key1);
+        errors::addError("Document caption key1: " . json_encode($returnValue), "whatsapp_api.php->send_message");
         if (empty($returnValue)) {
             $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key2);
         }
+        errors::addError("Document caption key2: " . json_encode($returnValue), "whatsapp_api.php->send_message");
+
         if (empty($returnValue)) {
             $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key3);
         }
+        errors::addError("Document caption key3: " . json_encode($returnValue), "whatsapp_api.php->send_message");
+
         return $returnValue;
     }
 
@@ -148,12 +153,12 @@ class whatsapp
         try {
             $phoneWithoutPlus = str_replace('+', '', $phoneNumber);
             $jsonUrl = "https://social.hilix.org/api/send?" . http_build_query([
-                    'access_token' => $this->access_token,
-                    'instance_id' => $this->instance_id,
-                    'number' => $phoneWithoutPlus,
-                    'type' => 'text',
-                    'message' => $message
-                ]);
+                'access_token' => $this->access_token,
+                'instance_id' => $this->instance_id,
+                'number' => $phoneWithoutPlus,
+                'type' => 'text',
+                'message' => $message
+            ]);
             $res = whatsapp::webRequestPost($jsonUrl);
             errors::addError("Error: " . $res, "classes/whatsapp.php line 148");
             $resJson = json_decode($res);
@@ -173,14 +178,14 @@ class whatsapp
         try {
             $phoneWithoutPlus = str_replace('+', '', $phoneNumber);
             $jsonUrl = "https://social.hilix.org/api/send?" . http_build_query([
-                    'access_token' => $this->access_token,
-                    'instance_id' => $this->instance_id,
-                    'media_url' => $fileUrl,
-                    'message' => $message,
-                    'type' => 'media',
-                    'number' => $phoneWithoutPlus,
-                    'filename' => $fileName
-                ]);
+                'access_token' => $this->access_token,
+                'instance_id' => $this->instance_id,
+                'media_url' => $fileUrl,
+                'message' => $message,
+                'type' => 'media',
+                'number' => $phoneWithoutPlus,
+                'filename' => $fileName
+            ]);
             $res = whatsapp::webRequestPost($jsonUrl);
             $resJson = json_decode($res);
             if (isset($resJson->status) && strtolower($resJson->status) == "success") {
