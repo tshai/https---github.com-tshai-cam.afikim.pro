@@ -1,9 +1,14 @@
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
-
+const params = new URLSearchParams(window.location.search);
+const user_guid = params.get("user_guid"); // This gets '1' from your example URL
+const room_guid = params.get("room_guid");
+const user_type = params.get("user_type");
 let localStream;
 let peerConnection;
 let userStartChat = 0;
+let audio;
+let video;
 const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }], // Google's public STUN server
 };
@@ -12,10 +17,6 @@ const config = {
 const socket = new WebSocket("wss://cam.afikim.pro:8080");
 
 $(document).ready(function () {
-  const params = new URLSearchParams(window.location.search);
-  const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-  const room_guid = params.get("room_guid");
-  const user_type = params.get("user_type");
   if (user_type == "manager") {
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
@@ -30,15 +31,9 @@ $(document).ready(function () {
       });
   }
 });
-function openConnection() {}
+
 socket.addEventListener("open", function (event) {
   // Send identification message
-  if (userStartChat == "1") {
-    alert("open");
-    const params = new URLSearchParams(window.location.search);
-    const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-    const room_guid = params.get("room_guid");
-    const user_type = params.get("user_type");
     socket.send(
       JSON.stringify({
         type: "identify",
@@ -47,63 +42,45 @@ socket.addEventListener("open", function (event) {
         user_type: user_type,
       })
     );
-  }
 });
 
 // Handle WebSocket messages
 socket.addEventListener("message", async function (event) {
-  if (userStartChat == "1") {
+  // if (userStartChat == "1") {
     const data = JSON.parse(event.data);
     if (typeof data.error != "undefined" && data.error === "sessionSts1") {
       alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
       window.location.href = "/";
-    }
-    else if (data.type === "answer") {
+
+      
+    } else if (data.type === "answer") {
       await peerConnection.setRemoteDescription(
         new RTCSessionDescription(data.data)
       );
-    } else if (data.type === "candidate") {
+    }
+    else if (data.type === "offer") {
+      await createPeerConnection();
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(data.data)
+      );
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.send(
+        JSON.stringify({
+          type: "answer",
+          user_guid: user_guid,
+          room_guid: room_guid,
+          user_type: user_type,
+          data: answer,
+        })
+      );
+      //socket.send(JSON.stringify({type: 'answer', answer: answer}));
+    } 
+    else if (data.type === "candidate") {
       await peerConnection.addIceCandidate(new RTCIceCandidate(data.data));
     }
-  }
+  // }
 });
-
-function disconnect() {
-  const params = new URLSearchParams(window.location.search);
-  const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-  const room_guid = params.get("room_guid");
-  const user_type = params.get("user_type");
-  socket.send(
-    JSON.stringify({
-      type: "disconnect",
-      user_guid: user_guid,
-      room_guid: room_guid,
-      user_type: user_type,
-      data: "disconnect",
-    })
-  );
-  console.log("Function called by worker at", new Date());
-}
-function update_time_use() {
-  if (userStartChat == 1) {
-    const params = new URLSearchParams(window.location.search);
-    const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-    const room_guid = params.get("room_guid");
-    const user_type = params.get("user_type");
-    socket.send(
-      JSON.stringify({
-        type: "update",
-        user_guid: user_guid,
-        room_guid: room_guid,
-        user_type: user_type,
-        data: "update",
-      })
-    );
-    console.log("Function called by worker at", new Date());
-  }
-}
-
-setInterval(update_time_use, 3000); // Call doSomething every 3 seconds
 
 async function createPeerConnection(num) {
   peerConnection = new RTCPeerConnection(config);
@@ -111,10 +88,6 @@ async function createPeerConnection(num) {
   // ICE candidate event: send any ICE candidates to the remote peer
   peerConnection.onicecandidate = function (event) {
     if (event.candidate) {
-      const params = new URLSearchParams(window.location.search);
-      const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-      const room_guid = params.get("room_guid");
-      const user_type = params.get("user_type");
       socket.send(
         JSON.stringify({
           type: "candidate",
@@ -156,36 +129,20 @@ async function createPeerConnection(num) {
     }
   };
   //Get local media stream
-  if (num == 1) {
-    //with camera
-    if (!localStream) {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
-        localVideo.srcObject = localStream;
-      } catch (error) {
-        alert("לא ניתן לגשת למצלמה או למיקרופון, אנא נסה לפתוח את האתר מחדש");
-        console.error("getUserMedia error:", error);
-        return;
-      }
-    }
-  } else if (num == 2) {
-    //without camera only audio
-    if (!localStream) {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: false,
-          audio: true,
-        });
-        //localVideo.srcObject = localStream;
-      } catch (error) {
-        alert("לא ניתן לגשת למיקרופון, אנא נסה לפתוח את האתר מחדש");
-        console.error("getUserMedia error:", error);
-        return;
-      }
-    }
+
+  //with camera
+
+  try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: video,
+        audio: audio,
+      });
+ 
+    localVideo.srcObject = localStream;
+  } catch (error) {
+    alert("לא ניתן לגשת למצלמה או למיקרופון, אנא נסה לפתוח את האתר מחדש");
+    console.error("getUserMedia error:", error);
+    return;
   }
 
   // Add each track from the local stream to the peer connection
@@ -196,25 +153,21 @@ async function createPeerConnection(num) {
 
 // Starting a call (example)
 async function startCall(num) {
-  userStartChat = 1;
-  await createPeerConnection(num);
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-
-  // Extract user_guid from the URL
-  const params = new URLSearchParams(window.location.search);
-  const user_guid = params.get("user_guid"); // This gets '1' from your example URL
-  const room_guid = params.get("room_guid");
-  const user_type = params.get("user_type");
+  if(num==1){
+    video=true;
+    audio=true;
+    }
+    else{
+      video=false;
+      audio=true;
+    }
   socket.send(
     JSON.stringify({
-      type: "offer",
+      type: "startCall",
       user_guid: user_guid,
       room_guid: room_guid,
       user_type: user_type,
-      data: offer,
+      data: "startCall",
     })
   );
 }
-
-
