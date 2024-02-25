@@ -169,7 +169,8 @@ if ($q_type == "start_chat") {
             mkdir($target_dir, 0777, true);
         }
         move_uploaded_file($_FILES["file"]["tmp_name"], $target_file);
-        $whatsappRes = $whatsapp->sendFile($target_file, $messageText, $new_file_name, $customerUserMetaPhone["meta_value"]);
+        $file_website_url = whatsapp::getCurrentDomain() . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $new_file_name;
+        $whatsappRes = $whatsapp->sendFile($file_website_url, $messageText, $new_file_name, $customerUserMetaPhone["meta_value"]);
         whatsapp::insertMessageToWhatsApp($messageText, 1, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
     } else {
         $whatsappRes = $whatsapp->sendMessage($customerUserMetaPhone["meta_value"], $messageText);

@@ -150,7 +150,7 @@ class websocketHelpers
                         $lastRefresh = $roomData->is_model == 0 ? $modelLastRefresh : $userLastRefresh;
                                             
                         // Compare and return based on the 10-second rule
-                        if ($sqlTime - $lastRefresh > 10) {
+                        if ($sqlTime - $lastRefresh > 1000) {
                             echo "Session timeout detected\n";
                             return 1;
                         } else {

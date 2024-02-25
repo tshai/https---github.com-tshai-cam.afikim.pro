@@ -64,6 +64,7 @@ class whatsapp
     public static function insertMessageToWhatsAppAll($messageText, $userNum)
     {
         try {
+            $messageText = substr($messageText, 0, 3999);
             $dbInstance = db::getInstance();
             $mysqli = $dbInstance->mysqli();
             // Check for connection errors
@@ -99,55 +100,6 @@ class whatsapp
             errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
         }
     }
-
-    public static function getNestedPropertyValue($object, $path)
-    {
-        $keys = explode('.', $path);
-
-        foreach ($keys as $key) {
-            if (is_object($object) && property_exists($object, $key)) {
-                $object = $object->{$key};
-            } elseif (is_array($object)) {
-                // Check if the key is in the format "array[index]"
-                if (preg_match('/^(\w+)\[(\d+)\]$/', $key, $matches)) {
-                    $arrayKey = $matches[1];
-                    $index = (int)$matches[2];
-                    if (isset($object[$arrayKey][$index]) && is_array($object[$arrayKey])) {
-                        $object = $object[$arrayKey][$index];
-                    } else {
-                        // Key or index not found, return null
-                        return null;
-                    }
-                } else {
-                    // Key not found, return null
-                    return null;
-                }
-            } else {
-                // Key not found, return null
-                return null;
-            }
-        }
-
-        return $object;
-    }
-
-    public static function getValueFromJsonNested($key1, $key2, $key3, $parsedMessageWithFile)
-    {
-        $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key1);
-        errors::addError("Document caption key1: " . json_encode($returnValue), "whatsapp_api.php->send_message");
-        if (empty($returnValue)) {
-            $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key2);
-        }
-        errors::addError("Document caption key2: " . json_encode($returnValue), "whatsapp_api.php->send_message");
-
-        if (empty($returnValue)) {
-            $returnValue = whatsapp::getNestedPropertyValue($parsedMessageWithFile, $key3);
-        }
-        errors::addError("Document caption key3: " . json_encode($returnValue), "whatsapp_api.php->send_message");
-
-        return $returnValue;
-    }
-
     public function sendMessage($phoneNumber, $message)
     {
         try {
@@ -160,7 +112,7 @@ class whatsapp
                 'message' => $message
             ]);
             $res = whatsapp::webRequestPost($jsonUrl);
-            errors::addError("Error: " . $res, "classes/whatsapp.php line 148");
+            errors::addError("SendMessage res: " . $res, "classes/whatsapp.php line 115");
             $resJson = json_decode($res);
             if (isset($resJson->status) && strtolower($resJson->status) == "success") {
                 return $resJson;
@@ -211,13 +163,80 @@ class whatsapp
         }
     }
 
+    public static  function getNestedArrayValue($array, $path)
+    {
+        foreach ($path as $key) {
+            if (isset($array[$key])) {
+                $array = $array[$key];
+            } else {
+                // Key doesn't exist, return default null or any other default value
+                return null;
+            }
+        }
+        return $array;
+    }
+
     public static function extraxtMessageFromJson($jsonObject)
     {
-        $messageText = $jsonObject->data->data->messages[0]->message->conversation;
-        if ($messageText == "") {
-            $messageText = htmlspecialchars($jsonObject->data->data->messages[0]->message->extendedTextMessage->text);
+        $pathMessageText = ['data', 'data', 'messages', 0, 'message', 'conversation'];
+        $messageText = whatsapp::getNestedArrayValue($jsonObject, $pathMessageText);
+        if (empty($messageText)) {
+            $pathMessageText = ['data', 'data', 'messages', 0, 'message', 'extendedTextMessage', 'text'];
+            $messageText = whatsapp::getNestedArrayValue($jsonObject, $pathMessageText);
         }
 
         return $messageText;
+    }
+
+    public static  function base64ToHex($base64String)
+    {
+        // Decode the Base64 string to a byte string (binary data)
+        $binaryData = base64_decode($base64String);
+
+        // Convert the binary data to a hexadecimal string
+        $hexString = bin2hex($binaryData);
+
+        return $hexString;
+    }
+    public static  function decryptWhatsappImage($fileUrl, $mediaKey, $docType)
+    {
+        $hexString = self::base64ToHex($mediaKey);
+        $fileExt = $docType == 1 ? 'jpeg' : 'pdf';
+
+        // Prepare the request URL
+        $requestUrl = "https://wad.hilix.org/download?fileExt=" . $fileExt . "&docType=" . $docType . "&url=" . urlencode($fileUrl) . "&mediaKey=" . $hexString;
+
+        // Make the web request and get the byte content
+        $byteContent = file_get_contents($requestUrl);
+
+        // Return the content as a base64-encoded string
+        return base64_encode($byteContent);
+    }
+
+    public static function createFileFromBase64($base64Content, $outputFilePath)
+    {
+        // Decode the base64 content to get the binary data
+        $binaryData = base64_decode($base64Content);
+
+        // Write the binary data to a file
+        file_put_contents($outputFilePath, $binaryData);
+
+        // Check if the file was created successfully
+        if (file_exists($outputFilePath)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public static function getCurrentDomain()
+    {
+        // Check if SSL is enabled or not
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+        // Get the server name (domain)
+        $domainName = $_SERVER['HTTP_HOST'];
+        // Concatenate to get the full URL
+        $currentDomain = $protocol . $domainName;
+        return $currentDomain; // Outputs something like https://example.com
     }
 }
