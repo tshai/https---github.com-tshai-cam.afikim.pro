@@ -11,12 +11,16 @@ $dbInstance = db::getInstance();
 $current_user = wp_get_current_user();
 $q_type = $_REQUEST['q_type'];
 if ($q_type == "start_chat") {
+    $model_guid = $_REQUEST['model_guid'];
+    $dbInstance = db::getInstance();
+    $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
     $time_left = ChatTimeUse::getTimeLeft($current_user->ID);
-    if ($time_left > 20) {
-        $model_guid = $_REQUEST['model_guid'];
-        $dbInstance = db::getInstance();
-        $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
-        errors::addError(json_encode($modelUser), "20");
+    $userBlocked = model_helper::getGirlBlockUser($modelUser['ID'], $current_user->ID);
+    if ($time_left < 20) {
+        echo 'System message: Not enough time to send message';
+    } else if ($userBlocked) {
+        echo 'System message: Cannot send to this model. You are not charged for this message';
+    } else {
         $whatsapp = new whatsapp($modelUser['whatsapp_instance_id']);
         // send message to user
         $modelMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "nickname"]);
@@ -31,8 +35,6 @@ if ($q_type == "start_chat") {
         whatsapp::insertMessageToWhatsApp($newMessageToGirl, 0, $current_user->ID, $modelUser['ID'], 0);
         ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $current_user->ID, 0, 0);
         echo "ok";
-    } else {
-        echo 'not_enough_time';
     }
     die();
 } else if ($q_type == "models_list") {
@@ -99,6 +101,7 @@ if ($q_type == "start_chat") {
         $cardNew['user_guid'] = $user['user_guid'];
         $cardNew['is_read'] = $chat['girl_read'];
         $cardNew['newest_message'] = $chat['newest_message_cut'];
+        $cardNew['newest_message_type'] = $chat['newest_message_type'];
         $hasImage = model_helper::getMetaValue("user_avatar", $filteredByUserId);
         $cardNew['image'] = $hasImage == "" ? "/wp-content/uploads/2024/02/user.png" : "/wp-content" . $hasImage;
         $chatsResponse[] = $cardNew;
@@ -135,6 +138,7 @@ if ($q_type == "start_chat") {
     $filteredByUserId = R::getAll("SELECT * FROM wp_usermeta where user_id = :value1", [':value1' => $user['ID']]);
     $response->name = model_helper::getMetaValue("nickname", $filteredByUserId);
     $response->user_guid = $user['user_guid'];
+    $response->user_blocked = model_helper::getGirlBlockUser($model_user->ID, $user['ID']);
     echo json_encode($response);
     die();
 } else if ($q_type == "create_chat_room_user") {
@@ -158,6 +162,7 @@ if ($q_type == "start_chat") {
     $messageText = htmlspecialchars($message);
     $whatsapp = new whatsapp($model_user->whatsapp_instance_id);
     $customerUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$message_room['user_num'], "phone"]);
+    $inserted_id;
     if (!empty($_FILES)) {
         $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/";
         $extension = pathinfo($_FILES["file"]['name'], PATHINFO_EXTENSION);
@@ -169,15 +174,34 @@ if ($q_type == "start_chat") {
             mkdir($target_dir, 0777, true);
         }
         move_uploaded_file($_FILES["file"]["tmp_name"], $target_file);
+        $messageType = 0;
+        if (model_helper::isImage($target_file)) {
+            $messageType = 1;
+        } else if (model_helper::isVideo($target_file)) {
+            $messageType = 2;
+        }
+
         $file_website_url = whatsapp::getCurrentDomain() . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $new_file_name;
         $whatsappRes = $whatsapp->sendFile($file_website_url, $messageText, $new_file_name, $customerUserMetaPhone["meta_value"]);
-        whatsapp::insertMessageToWhatsApp($messageText, 1, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
+        $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, $messageType, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
     } else {
         $whatsappRes = $whatsapp->sendMessage($customerUserMetaPhone["meta_value"], $messageText);
-        whatsapp::insertMessageToWhatsApp($messageText, 0, $message_room["user_num"], $model_user->ID, 1);
+        $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, 0, $message_room["user_num"], $model_user->ID, 1);
     }
-
-    echo '{"res":"ok"}';
+    $message = R::getRow("SELECT * FROM wp_whatsapp_messages WHERE id = :value1", [':value1' => $inserted_id]);
+    $dateString = $message['date_in'];
+    $parsedDate = new DateTime($dateString);
+    $currentDate = new DateTime(); // Current date and time
+    if ($parsedDate->format('d/m/y') === $currentDate->format('d/m/y')) {
+        $cardNew['date_in'] = $parsedDate->format('H:i');
+    } else {
+        $cardNew['date_in'] = $parsedDate->format('d/m/y');
+    }
+    $cardNew['message'] = $message['message'];
+    $cardNew['message_type'] = $message['message_type'];
+    $cardNew['girl_send'] = $message['girl_send'];
+    $cardNew['file_name'] = "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $message['file_name'];
+    echo json_encode($cardNew);
     die();
 } else if ($q_type == "user_statistic") {
     $customer_user = wp_get_current_user();
@@ -354,6 +378,32 @@ if ($q_type == "start_chat") {
     $cardNew['languages'] = $languagesArrRes;
 
     echo json_encode($cardNew);
+    die();
+} else if ($q_type == "block_user") {
+    $model_user = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $user_guid = $_REQUEST['user_guid'];
+    $room_id = $_REQUEST['room_id'];
+    $user = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$user_guid]);
+    $chat = R::getRow('SELECT * FROM wp_whatsapp_chats WHERE room_id=? LIMIT 1', [$room_id]);
+    if ($user['ID'] == $chat["user_num"] && $model_user->ID == $chat['girl_num']) {
+        model_helper::girlBlockUser($model_user->ID, $user['ID']);
+    }
+    echo "ok";
+    die();
+} else if ($q_type == "unblock_user") {
+    $model_user = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $user_guid = $_REQUEST['user_guid'];
+    $room_id = $_REQUEST['room_id'];
+    $user = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$user_guid]);
+    $chat = R::getRow('SELECT * FROM wp_whatsapp_chats WHERE room_id=? LIMIT 1', [$room_id]);
+    if ($user['ID'] == $chat["user_num"] && $model_user->ID == $chat['girl_num']) {
+        $updateSql = "UPDATE black_list SET blocked_status=? WHERE girl_num=? AND user_id=?";
+        $updateParams = [0, $model_user->ID, $user['ID']];
+        R::exec($updateSql, $updateParams);
+    }
+    echo "ok";
     die();
 } else if ($q_type == "log_out") {
     wp_logout(); // WordPress function to log out the current user

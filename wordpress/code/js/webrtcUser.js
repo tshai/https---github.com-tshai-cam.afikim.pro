@@ -16,76 +16,31 @@ const config = {
 // Initialize WebSocket connection
 const socket = new WebSocket("wss://cam.afikim.pro:8080");
 
-$(document).ready(function () {
-  if (user_type == "manager") {
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then(function (localStream) {
-        // Assuming localVideo is a previously selected DOM element
-        localVideo.srcObject = localStream;
-        $("#startCall").show();
-      })
-      .catch(function (error) {
-        alert("לא ניתן לגשת למצלמה או למיקרופון, אנא נסה לפתוח את האתר מחדש");
-        console.error("getUserMedia error:", error);
-      });
-  }
-});
 
-socket.addEventListener("open", function (event) {
-  // Send identification message
-    socket.send(
-      JSON.stringify({
-        type: "identify",
-        user_guid: user_guid,
-        room_guid: room_guid,
-        user_type: user_type,
-      })
-    );
-});
+function connectChat() {
 
-// Handle WebSocket messages
-socket.addEventListener("message", async function (event) {
-  // if (userStartChat == "1") {
-    const data = JSON.parse(event.data);
-    if (typeof data.error != "undefined" && data.error === "sessionSts1") {
-      alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
-      window.location.href = "/";
-
-      
-    } else if (data.type === "answer") {
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(data.data)
-      );
-    }
-    else if (data.type === "offer") {
-      await createPeerConnection();
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(data.data)
-      );
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
+  peerConnection = new RTCPeerConnection(config);
+  peerConnection.ontrack = function (event) {
+    console.log("ontrack event");
+    remoteVideo.srcObject = event.streams[0];
+    remoteVideo.onloadedmetadata = function () {
+      remoteVideo.play();
+    };
+  };
+  handleLogin('true', 1, function (x) {
+    if (x === 'true') {
       socket.send(
         JSON.stringify({
-          type: "answer",
+          type: "startCall",
           user_guid: user_guid,
           room_guid: room_guid,
           user_type: user_type,
-          data: answer,
+          data: "startCall",
         })
       );
-      //socket.send(JSON.stringify({type: 'answer', answer: answer}));
-    } 
-    else if (data.type === "candidate") {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(data.data));
+      //console.log("handleLogin");
     }
-  // }
-});
-
-async function createPeerConnection(num) {
-  peerConnection = new RTCPeerConnection(config);
-
-  // ICE candidate event: send any ICE candidates to the remote peer
+  });
   peerConnection.onicecandidate = function (event) {
     if (event.candidate) {
       socket.send(
@@ -97,77 +52,174 @@ async function createPeerConnection(num) {
           data: event.candidate,
         })
       );
-      //socket.send(JSON.stringify({type: 'candidate', candidate: event.candidate}));
     }
   };
-
-  // Stream event: set the remote video source when a stream is received from the remote peer
-  // peerConnection.ontrack = function (event) {
-  //     remoteVideo.srcObject = event.streams[0];
-  // };
-  peerConnection.ontrack = function (event) {
-    // Set the remote video source when a stream is received from the remote peer
-    remoteVideo.srcObject = event.streams[0];
-
-    // Check the types of tracks in the stream
-    let hasAudio = event.streams[0].getAudioTracks().length > 0;
-    let hasVideo = event.streams[0].getVideoTracks().length > 0;
-
-    console.log("Received stream has audio:", hasAudio);
-    console.log("Received stream has video:", hasVideo);
-
-    // You can use hasAudio and hasVideo to adjust UI or handle the stream accordingly
-    if (!hasVideo) {
-      console.log("The stream contains only audio.");
-      // Handle audio-only stream scenario
-    } else if (!hasAudio) {
-      console.log("The stream contains only video.");
-      // Handle video-only stream scenario
-    } else {
-      console.log("The stream contains both audio and video.");
-      // Handle scenario where both audio and video are present
+  peerConnection.onconnectionstatechange = function (event) {
+    switch (peerConnection.connectionState) {
+        case "connected":
+            console.log("The connection has become fully connected");
+            break;
+        case "disconnected":
+            console.log("The connection disconnected");
+            //alert("aa")
+            ReconnectChat();
+            break;
+        case "failed":
+            console.log("The connection failed");
+            break;
+        case "closed":
+            console.log("The connection closed");
+            break;
     }
   };
-  //Get local media stream
-
-  //with camera
-
-  try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: video,
-        audio: audio,
-      });
- 
-    localVideo.srcObject = localStream;
-  } catch (error) {
-    alert("לא ניתן לגשת למצלמה או למיקרופון, אנא נסה לפתוח את האתר מחדש");
-    console.error("getUserMedia error:", error);
-    return;
-  }
-
-  // Add each track from the local stream to the peer connection
-  localStream.getTracks().forEach((track) => {
-    peerConnection.addTrack(track, localStream);
-  });
 }
 
-// Starting a call (example)
-async function startCall(num) {
-  if(num==1){
-    video=true;
-    audio=true;
-    }
-    else{
-      video=false;
-      audio=true;
-    }
+$(document).ready(function () {
+
+});
+function handleOffer(offer, name) {
+  console.log("239-handleOffer");
+  try {
+      window.RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription || window.webkitRTCSessionDescription;
+      var RTCSessionDescription_ = new window.RTCSessionDescription(offer);
+      peerConnection.setRemoteDescription(RTCSessionDescription_);
+  }
+  catch (err) {
+      logError("228-" + err.message);
+      console.log("228-" + err.message);
+  }
+
+
+  //create an answer to an offer 
+  peerConnection.createAnswer(function (answer) {
+      console.log("239-createAnswer");
+      peerConnection.setLocalDescription(answer);
+      socket.send(
+        JSON.stringify({
+          type: "answer",
+          user_guid: user_guid,
+          room_guid: room_guid,
+          user_type: user_type,
+          data: answer,
+        })
+      );
+
+  }, function (error) {
+      logError(err.message);
+      alert("Error when creating an answer");
+  });
+}
+socket.addEventListener("open", function (event) {
+  // Send identification message
   socket.send(
     JSON.stringify({
-      type: "startCall",
+      type: "identify",
       user_guid: user_guid,
       room_guid: room_guid,
       user_type: user_type,
-      data: "startCall",
     })
   );
+});
+
+// Handle WebSocket messages
+socket.addEventListener("message", async function (event) {
+  // if (userStartChat == "1") {
+  const data = JSON.parse(event.data);
+  if (typeof data.error != "undefined" && data.error === "sessionSts1") {
+    alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
+    window.location.href = "/";
+  } else if (data.type === "answer") {
+    handleAnswer(data.data);
+  } else if (data.type === "offer") {
+        console.log("GET-offer", "offer");
+        handleOffer(data.data, data.type);
+   
+  } else if (data.type === "candidate") {
+    handleCandidate(data.data);
+    // await peerConnection.addIceCandidate(new RTCIceCandidate(data.data));
+  }
+  // }
+});
+function handleCandidate(candidate) {
+  try {
+      window.RTCIceCandidate = window.RTCIceCandidate || window.mozRTCIceCandidate || window.webkitRTCIceCandidate;
+      peerConnection.addIceCandidate(new window.RTCIceCandidate(candidate));
+  }
+  catch (err) {
+      logError(err.message);
+  }
 }
+function handleAnswer(answer) {
+  try {
+      window.RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription || window.webkitRTCSessionDescription;
+      peerConnection.setRemoteDescription(new window.RTCSessionDescription(answer));
+  }
+  catch (err) {
+      logError(err.message);
+  }
+}
+ function handleLogin(success, type, callback) {
+  if (success === false) {
+      alert("Ooops...try a different username");
+  } else {
+    navigator.mediaDevices
+    .getUserMedia({ video: video, audio: audio }) // Request both video and audio
+    .then(function(myStream) {
+      localVideo.srcObject = myStream; // Display local stream in a video element
+      myStream.getTracks().forEach(track => {
+        console.log("track", track); // Log track details for debugging
+        console.log("peerConnection", peerConnection); // Log peerConnection state for debugging
+        if (peerConnection) { // Validate peerConnection is not null or undefined
+          peerConnection.addTrack(track, myStream); // Add each track to the peer connection
+        } else {
+          console.error("PeerConnection is not initialized.");
+        }
+      });
+      callback('true');
+    })
+    .catch(function(err) {
+      console.error(err.message); // Log error message to console
+    });
+  }
+}//type 1 mic and cam, type 2 only mic
+
+
+
+// Starting a call (example)
+async function startCall(num) {
+  if (num == 1) {
+    video = true;
+    audio = true;
+  } else {
+    video = false;
+    audio = true;
+  }
+  connectChat();
+  
+}
+function disconnect() {
+  socket.send(
+    JSON.stringify({
+      type: "disconnect",
+      user_guid: user_guid,
+      room_guid: room_guid,
+      user_type: user_type,
+      data: "disconnect",
+    })
+  );
+  console.log("Function called by worker at", new Date());
+}
+function update_time_use() {
+    socket.send(
+      JSON.stringify({
+        type: "update",
+        user_guid: user_guid,
+        room_guid: room_guid,
+        user_type: user_type,
+        data: "update",
+      })
+    );
+    //console.log("Function called by worker at", new Date());
+}
+
+setInterval(update_time_use, 3000); // Call doSomething every 3 seconds
