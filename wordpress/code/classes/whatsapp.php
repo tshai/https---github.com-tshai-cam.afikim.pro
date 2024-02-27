@@ -16,33 +16,29 @@ class whatsapp
         }
     }
 
-    public static function insertMessageToWhatsApp($messageText, $messageType, $userNum, $girlNum, $girl_send, $file_name = null): void
+    public static function insertMessageToWhatsApp($messageText, $messageType, $userNum, $girlNum, $girl_send, $file_name = null): int
     {
-
         $dbInstance = db::getInstance();
         $mysqli = $dbInstance->mysqli();
-
-        // Check for connection errors
         if ($mysqli->connect_error) {
             die("Connection failed: " . $mysqli->connect_error);
         }
         $date = date('Y-m-d H:i:s');
-        $girl_read = $girl_send != true;
+        $girl_read = $girl_send;
         $substringMessage = (strlen($messageText) > 100 ? substr($messageText, 0, 100) : $messageText);
         $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE girl_num=? and user_num=? LIMIT 1";
         $chats = R::getAll($chatsSql, [$girlNum, $userNum]);
         $wp_whatsapp_chats_id = 0;
         if ($chats) {
             $wp_whatsapp_chats_id = $chats[0]["ID"];
-            $updateSql = "UPDATE wp_whatsapp_chats SET last_time_update=?, newest_message_cut=?, girl_read=? WHERE girl_num=? AND user_num=?";
-            $updateParams = [$date, $substringMessage, $girl_read, $girlNum, $userNum];
+            $updateSql = "UPDATE wp_whatsapp_chats SET last_time_update=?, newest_message_cut=?,newest_message_type=?, girl_read=? WHERE girl_num=? AND user_num=?";
+            $updateParams = [$date, $substringMessage, $messageType, $girl_read, $girlNum, $userNum];
             R::exec($updateSql, $updateParams);
         } else {
             $room_id = uniqid();
-            $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,girl_read) VALUES (?, ?, ?, ?,?,?,?)";
+            $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,newest_message_type=?,girl_read) VALUES (?, ?, ?, ?,?,?,?)";
             $stmtChatsInsert = $mysqli->prepare($sqlChatsInsert);
-            // Bind parameters
-            $stmtChatsInsert->bind_param("iissssi", $girlNum, $userNum, $date, $room_id, $date, $substringMessage, $girl_read);
+            $stmtChatsInsert->bind_param("iissssi", $girlNum, $userNum, $date, $room_id, $date, $substringMessage,  $messageType, $girl_read);
             if (!$stmtChatsInsert->execute()) {
                 errors::addError("Error: " . $stmtChatsInsert->error, "classes/whatsapp.php line 43");
             }
@@ -57,8 +53,10 @@ class whatsapp
         if (!$stmt->execute()) {
             errors::addError("Error: " . $stmt->error, "classes/whatsapp.php line 45");
         }
+        $insertedId = $mysqli->insert_id;
         $stmt->close();
         $mysqli->close();
+        return $insertedId;
     }
 
     public static function insertMessageToWhatsAppAll($messageText, $userNum)
@@ -198,13 +196,12 @@ class whatsapp
 
         return $hexString;
     }
-    public static  function decryptWhatsappImage($fileUrl, $mediaKey, $docType)
+    public static  function decryptWhatsappImage($fileUrl, $mediaKey, $docType, $extention)
     {
         $hexString = self::base64ToHex($mediaKey);
-        $fileExt = $docType == 1 ? 'jpeg' : 'pdf';
 
         // Prepare the request URL
-        $requestUrl = "https://wad.hilix.org/download?fileExt=" . $fileExt . "&docType=" . $docType . "&url=" . urlencode($fileUrl) . "&mediaKey=" . $hexString;
+        $requestUrl = "https://wad.hilix.org/download?fileExt=" . $extention . "&docType=" . $docType . "&url=" . urlencode($fileUrl) . "&mediaKey=" . $hexString;
 
         // Make the web request and get the byte content
         $byteContent = file_get_contents($requestUrl);

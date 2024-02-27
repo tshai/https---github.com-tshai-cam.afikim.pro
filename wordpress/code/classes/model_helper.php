@@ -16,6 +16,56 @@ class model_helper
         }
     }
 
+    public static function getGirlBlockUser($girl_num, $user_num)
+    {
+        $dbInstance = db::getInstance();
+        $blackList = R::getRow('SELECT * FROM black_list WHERE user_id=? and girl_num=?', [$user_num, $girl_num]);
+        if ($blackList && $blackList['blocked_status'] == 1) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public static function girlBlockUser($girl_num, $user_num)
+    {
+        try {
+            $dbInstance = db::getInstance();
+            $mysqli = $dbInstance->mysqli();
+            if ($mysqli->connect_error) {
+                die("Connection failed: " . $mysqli->connect_error);
+            }
+
+            $blackList = R::getRow('SELECT * FROM black_list WHERE user_id=? and girl_num=?', [$user_num, $girl_num]);
+            if ($blackList) {
+                $updateSql = "UPDATE black_list SET blocked_status=? WHERE girl_num=? AND user_id=?";
+                $updateParams = [1, $girl_num, $user_num];
+                R::exec($updateSql, $updateParams);
+            } else {
+                $sql = "INSERT INTO black_list (user_id, girl_num, date_in, blocked_status) VALUES (?, ?, ?, ?)";
+                $stmt = $mysqli->prepare($sql);
+                if ($stmt === false) {
+                    errors::addError("Prepare failed: " . $mysqli->error, "dbRes");
+                }
+
+                $date = date('Y-m-d H:i:s');
+                $blocked_sts = 1;
+                $stmt->bind_param("iisi", $user_num, $girl_num, $date, $blocked_sts);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    $mysqli->close();
+                    return "success";
+                } else {
+                    $stmt->close();
+                    $mysqli->close();
+                    return "Error: " . $stmt->error;
+                }
+            }
+        } catch (Exception $ex) {
+            errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
+        }
+    }
+
     public static function getMetaValue($meta_key, $filteredByUserId)
     {
         $avatar = current(array_filter($filteredByUserId, function ($item) use ($meta_key) {
@@ -143,5 +193,19 @@ class model_helper
         } catch (Exception $ex) {
             errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
         }
+    }
+
+    public static function isImage($filePath)
+    {
+        $validImageTypes = [IMAGETYPE_GIF, IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP, IMAGETYPE_BMP];
+        $imageType = exif_imagetype($filePath);
+        return in_array($imageType, $validImageTypes);
+    }
+
+    public static function isVideo($filePath)
+    {
+        $videoMimeTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mpeg', 'video/avi', 'video/quicktime'];
+        $fileMimeType = mime_content_type($filePath);
+        return in_array($fileMimeType, $videoMimeTypes);
     }
 }
