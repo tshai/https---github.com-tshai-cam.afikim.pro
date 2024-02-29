@@ -25,7 +25,7 @@ class whatsapp
         }
         $date = date('Y-m-d H:i:s');
         $girl_read = $girl_send;
-        $substringMessage = (strlen($messageText) > 100 ? substr($messageText, 0, 100) : $messageText);
+        $substringMessage = (strlen($messageText) > 99 ? substr($messageText, 0, 99) : $messageText);
         $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE girl_num=? and user_num=? LIMIT 1";
         $chats = R::getAll($chatsSql, [$girlNum, $userNum]);
         $wp_whatsapp_chats_id = 0;

@@ -3,14 +3,14 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/includes.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-config.php');
-$q_type = $_REQUEST['q_type'];
+$q_type = filter_var($_REQUEST['q_type'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 if ($q_type == "send_message") {
     try {
         $requestBody = file_get_contents('php://input');
         errors::addError($requestBody, "whatsapp_api.php->send_message");
         $canContinue = true;
         $jsonObject = json_decode($requestBody, true);
-        $dataEvent = $jsonObject['data']['event'];
+        $dataEvent = filter_var($jsonObject['data']['event'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
         if (!empty($dataEvent)) {
             if (strtolower($dataEvent) !== "messages.upsert") {
                 $canContinue = false;
@@ -19,7 +19,7 @@ if ($q_type == "send_message") {
             $canContinue = false;
         }
         if ($canContinue) {
-            $phoneExtract = $jsonObject['data']['data']['messages'][0]['key']['remoteJid'];
+            $phoneExtract = filter_var($jsonObject['data']['data']['messages'][0]['key']['remoteJid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
             if ($phoneExtract != null) {
                 $senderPhone = htmlspecialchars($phoneExtract); // user that send message
                 if ($senderPhone != '') {
@@ -30,7 +30,7 @@ if ($q_type == "send_message") {
                     if (empty($userMeta)) {
                         whatsapp::insertMessageToWhatsAppAll($requestBody, 25);
                     } else {
-                        $instance_id = strtoupper($jsonObject['instance_id']); // girl whatsapp instance id
+                        $instance_id = strtoupper(filter_var($jsonObject['instance_id'], FILTER_SANITIZE_FULL_SPECIAL_CHARS)); // girl whatsapp instance id
                         $whatsapp = new whatsapp($instance_id);
                         $dbRes = whatsapp::insertMessageToWhatsAppAll($requestBody, $userMeta["user_id"]);
 
@@ -74,15 +74,17 @@ if ($q_type == "send_message") {
                             $pathVideoMessage = ['data', 'data', 'messages', 0, 'message', 'videoMessage'];
                             $videoMessage = whatsapp::getNestedArrayValue($jsonObject, $pathVideoMessage);
 
-                            $modelUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "virtual_phone"]);
+                            $modelUserMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "phone"]);
                             $message_room = R::getRow("SELECT * FROM wp_whatsapp_chats WHERE girl_num = :value1 AND user_num = :value2", [':value1' => $modelUser['ID'], ':value2' => $userMeta["user_id"]]);
                             $room_id = $message_room['room_id'];
                             $userMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "nickname"]);
 
+                            $acceptMessage = false;
                             if (empty($imageMessage) && empty($videoMessage) && empty($documentWithCaptionMessage) && empty($documentMessage)) {
                                 // The $documentCaption is empty                               
                                 $messageText = htmlspecialchars(whatsapp::extraxtMessageFromJson($jsonObject));
                                 whatsapp::insertMessageToWhatsApp($messageText, 0, $userMeta["user_id"], $modelUser['ID'], 0);
+                                $acceptMessage = true;
                             } else {
                                 $image_type_if_document = 0;
                                 if (empty($documentMessage) == false) {
@@ -122,6 +124,7 @@ if ($q_type == "send_message") {
                                     $target_file = $target_dir . $new_file_name;
                                     whatsapp::createFileFromBase64($base64Content, $target_file);
                                     whatsapp::insertMessageToWhatsApp($caption, 1, $userMeta["user_id"], $modelUser['ID'], 0, $new_file_name);
+                                    $acceptMessage = true;
                                 } else if (empty($videoMessage) == false) {
                                     $videoUrl = $videoMessage['url'];
                                     $mediaKey = $videoMessage['mediaKey'];
@@ -142,12 +145,23 @@ if ($q_type == "send_message") {
                                     $target_file = $target_dir . $new_file_name;
                                     whatsapp::createFileFromBase64($base64Content, $target_file);
                                     whatsapp::insertMessageToWhatsApp($caption, 2, $userMeta["user_id"], $modelUser['ID'], 0, $new_file_name);
+                                    $acceptMessage = true;
                                 }
                             }
-
-                            $messageTextFullUrl = "New message from user: " .  $userMetaName['meta_value'] . ". Click to answer -> https://cam.afikim.pro/model-chats/?room_id=" . $room_id;
-                            $whatsappRes = $whatsapp->sendMessage($modelUserMetaPhone["meta_value"], $messageTextFullUrl);
-                            ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $user['ID'], 0, 0);
+                            if ($acceptMessage) { // send message to model
+                                $modelUserFromWorking = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "online_from"]);
+                                $modelUserToWorking = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "online_to"]);
+                                $isTimeInRangeToSendMessage = model_helper::isCurrentHourInRange($modelUserFromWorking['meta_value'], $modelUserToWorking['meta_value']);
+                                if ($isTimeInRangeToSendMessage) {
+                                    $messageTextFullUrl = "New message from user: " .  $userMetaName['meta_value'] . ". Click to answer -> https://cam.afikim.pro/model-chats/?room_id=" . $room_id;
+                                    $whatsappRes = $whatsapp->sendMessage($modelUserMetaPhone["meta_value"], $messageTextFullUrl);
+                                } else {
+                                    $whatsappRes = $whatsapp->sendMessage($senderPhone, "System message: Model is not available now. She will be available from " . $modelUserFromWorking['meta_value'] . " to " . $modelUserToWorking['meta_value'] . ". Please, wait for her to respond.");
+                                }
+                                ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $user['ID'], 0, 0);
+                            } else {
+                                $whatsappRes = $whatsapp->sendMessage($senderPhone, "System message: Unsuported message type. You are not charged for this message");
+                            }
                         }
                     }
                 }

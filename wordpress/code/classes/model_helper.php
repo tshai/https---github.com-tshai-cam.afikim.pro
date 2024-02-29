@@ -195,17 +195,42 @@ class model_helper
         }
     }
 
-    public static function isImage($filePath)
+    public static function isCurrentHourInRange($startHour, $endHour)
     {
-        $validImageTypes = [IMAGETYPE_GIF, IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP, IMAGETYPE_BMP];
-        $imageType = exif_imagetype($filePath);
-        return in_array($imageType, $validImageTypes);
+        $startTime = strtotime($startHour);
+        $endTime = strtotime($endHour);
+        // Get current time
+        $currentHour = date("H:i");
+        $currentTime = strtotime($currentHour);
+
+        // Check if range spans over midnight
+        if ($endTime < $startTime) {
+            // Range spans over midnight
+            if ($currentTime > $startTime || $currentTime < $endTime) {
+                return true; // Current time is within the range
+            }
+        } else {
+            // Range does not span over midnight
+            if ($currentTime >= $startTime && $currentTime <= $endTime) {
+                return true; // Current time is within the range
+            }
+        }
+
+        return false; // Current time is not within the range
     }
 
-    public static function isVideo($filePath)
+    public static function isImageUploaded($fileTmpName)
+    {
+        $validImageTypes = ['image/gif', 'image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
+        // Get the MIME type of the uploaded file
+        $fileMimeType = mime_content_type($fileTmpName);
+        return in_array($fileMimeType, $validImageTypes);
+    }
+    public static function isVideoUploaded($fileTmpName)
     {
         $videoMimeTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mpeg', 'video/avi', 'video/quicktime'];
-        $fileMimeType = mime_content_type($filePath);
+        // Get the MIME type of the uploaded file
+        $fileMimeType = mime_content_type($fileTmpName);
         return in_array($fileMimeType, $videoMimeTypes);
     }
 }

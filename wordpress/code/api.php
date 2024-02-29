@@ -3,33 +3,39 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/includes.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-config.php');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' https://cam.afikim.pro; style-src 'self' https://cam.afikim.pro;");
 
 $helpersInstance = new helpers();
 $logsInstance = new Logs();
 $errorsInstance = new errors();
 $dbInstance = db::getInstance();
 $current_user = wp_get_current_user();
-$q_type = $_REQUEST['q_type'];
+$q_type = filter_var($_REQUEST['q_type'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 if ($q_type == "start_chat") {
-    $model_guid = $_REQUEST['model_guid'];
+    if ($current_user->ID == 0) {
+        echo 'הודעת מערכת: עליך להיכנס לאתר עם הטלפון והסיסמא';
+        die();
+    }
+    $model_guid = filter_var($_REQUEST['model_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $dbInstance = db::getInstance();
     $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
     $time_left = ChatTimeUse::getTimeLeft($current_user->ID);
     $userBlocked = model_helper::getGirlBlockUser($modelUser['ID'], $current_user->ID);
     if ($time_left < 20) {
-        echo 'System message: Not enough time to send message';
+        echo 'הודעת מערכת: אין לך מספיק זמן עליך לרכוש זמן';
     } else if ($userBlocked) {
-        echo 'System message: Cannot send to this model. You are not charged for this message';
+        echo 'הודעת מערכת: בחורה זו חסמה אותך. לא חוייבת עבור פעולה זו.';
     } else {
         $whatsapp = new whatsapp($modelUser['whatsapp_instance_id']);
         // send message to user
         $modelMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "nickname"]);
-        $newMessageToUser = "hello from girl " . $modelMetaName['meta_value'];
+        $newMessageToUser = " שלום מ " . $modelMetaName['meta_value'] . " אתה יכול להתחיל לשוחח עם הבחורה כאן. אם ברצונך לחזור לרשימה לחץ כאן"
+            . " -> https://cam.afikim.pro/";
         $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$current_user->ID, "phone"]);
         $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $newMessageToUser);
         whatsapp::insertMessageToWhatsApp($newMessageToUser, 0, $current_user->ID, $modelUser['ID'], 1);
         //send message to model
-        $newMessageToGirl = "hello from user " . $current_user->user_login;
+        $newMessageToGirl = "שלום ממשתמש " . $current_user->user_login;
         $girlMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "virtual_phone"]);
         $whatsappResGirl = $whatsapp->sendMessage($girlMetaPhone["meta_value"], $newMessageToGirl);
         whatsapp::insertMessageToWhatsApp($newMessageToGirl, 0, $current_user->ID, $modelUser['ID'], 0);
@@ -110,13 +116,34 @@ if ($q_type == "start_chat") {
     die();
 } else if ($q_type == "models_single_chat") {
     $model_user = wp_get_current_user();
-    $room_id = $_REQUEST['room_id'];
+    $room_id = filter_var($_REQUEST['room_id'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $dbInstance = db::getInstance();
-    $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE room_id=? LIMIT 1";
-    $chat = R::getAll($chatsSql, [$room_id])[0];
-    $user = R::getRow("SELECT * FROM wp_users WHERE ID = :value", [':value' => $chat["user_num"]]);
-    $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? order by id desc LIMIT 100";
-    $messages = R::getAll($messagesSql, [$chat['ID']]);
+    $other_user_guid = filter_var($_REQUEST['user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $other_user_guid]);
+    $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE room_id=? and girl_num=? and user_num=? LIMIT 1";
+    $chatList = R::getAll($chatsSql, [$room_id, $model_user->ID, $user['ID']]);
+    if (empty($chatList)) {
+        echo "{\"error\":\"Chat room not found\"}";
+        die();
+    }
+    $chat = $chatList[0];
+    $offset = filter_var($_REQUEST['offset'], FILTER_SANITIZE_NUMBER_INT);
+    $check_for_new = filter_var($_REQUEST['check_for_new'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    if (empty($offset)) {
+        $offset = 0;
+    }
+    $paramsArr = [];
+    if ($check_for_new == "0") {
+        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? order by id desc LIMIT 500 OFFSET ?";
+        $paramsArr = [$chat['ID'], $offset];
+    } else {
+        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? and date_in>? order by id desc LIMIT 500 OFFSET ?";
+        $simplifiedDateTime = preg_replace('/GMT.*$/', '', $check_for_new);
+        $dateTime = new DateTime($simplifiedDateTime);
+        $formattedDateTime = $dateTime->format('Y-m-d H:i:s');
+        $paramsArr = [$chat['ID'], $formattedDateTime, $offset];
+    }
+    $messages = R::getAll($messagesSql, $paramsArr);
     $messagesResponse = [];
     foreach ($messages as $message) {
         $dateString = $message['date_in'];
@@ -130,6 +157,7 @@ if ($q_type == "start_chat") {
         $cardNew['message'] = $message['message'];
         $cardNew['message_type'] = $message['message_type'];
         $cardNew['girl_send'] = $message['girl_send'];
+        $cardNew['index'] = $message['id'];
         $cardNew['file_name'] = "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $message['file_name'];
         $messagesResponse[] = $cardNew;
     }
@@ -143,8 +171,8 @@ if ($q_type == "start_chat") {
     die();
 } else if ($q_type == "create_chat_room_user") {
     $model_user = wp_get_current_user();
-    $room_guid = $_POST['room_guid'];
-    $other_user_guid = $_POST['other_user_guid'];
+    $room_guid = filter_var($_POST['room_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $other_user_guid = filter_var($_POST['other_user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $other_user_guid]);
     $other_user_url = "https://cam.afikim.pro/video-chat-customer?room_guid=" . $room_guid . "&user_type=customer&user_guid=" . $other_user_guid;
     $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "phone"]);
@@ -155,8 +183,8 @@ if ($q_type == "start_chat") {
     die();
 } else if ($q_type == "send_message_to_user") {
     $model_user = wp_get_current_user();
-    $room_id = $_POST['room_id'];
-    $message = $_POST['message'];
+    $room_id = filter_var($_POST['room_id'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $message = htmlspecialchars(filter_var($_POST['message'], FILTER_SANITIZE_FULL_SPECIAL_CHARS));
     $dbInstance = db::getInstance();
     $message_room = R::getRow("SELECT * FROM wp_whatsapp_chats WHERE room_id = :value1 AND girl_num = :value2", [':value1' => $room_id, ':value2' => $model_user->ID]);
     $messageText = htmlspecialchars($message);
@@ -168,22 +196,25 @@ if ($q_type == "start_chat") {
         $extension = pathinfo($_FILES["file"]['name'], PATHINFO_EXTENSION);
         $new_file_name = uniqid() . '.' . $extension;
         $target_file = $target_dir . $new_file_name;
-
         // Check if the upload folder exists, if not create it
         if (!file_exists($target_dir)) {
             mkdir($target_dir, 0777, true);
         }
-        move_uploaded_file($_FILES["file"]["tmp_name"], $target_file);
         $messageType = 0;
-        if (model_helper::isImage($target_file)) {
+        if (model_helper::isImageUploaded($_FILES["file"]['tmp_name'])) {
             $messageType = 1;
-        } else if (model_helper::isVideo($target_file)) {
+        } else if (model_helper::isVideoUploaded($_FILES["file"]['tmp_name'])) {
             $messageType = 2;
         }
-
-        $file_website_url = whatsapp::getCurrentDomain() . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $new_file_name;
-        $whatsappRes = $whatsapp->sendFile($file_website_url, $messageText, $new_file_name, $customerUserMetaPhone["meta_value"]);
-        $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, $messageType, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
+        if ($messageType == 0) {
+            echo "{\"error\":\"file type not supported\"}";
+            die();
+        } else {
+            move_uploaded_file($_FILES["file"]["tmp_name"], $target_file);
+            $file_website_url = whatsapp::getCurrentDomain() . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $new_file_name;
+            $whatsappRes = $whatsapp->sendFile($file_website_url, $messageText, $new_file_name, $customerUserMetaPhone["meta_value"]);
+            $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, $messageType, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
+        }
     } else {
         $whatsappRes = $whatsapp->sendMessage($customerUserMetaPhone["meta_value"], $messageText);
         $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, 0, $message_room["user_num"], $model_user->ID, 1);
@@ -200,16 +231,17 @@ if ($q_type == "start_chat") {
     $cardNew['message'] = $message['message'];
     $cardNew['message_type'] = $message['message_type'];
     $cardNew['girl_send'] = $message['girl_send'];
+    $cardNew['index'] = $message['id'];
     $cardNew['file_name'] = "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $message['file_name'];
     echo json_encode($cardNew);
     die();
 } else if ($q_type == "user_statistic") {
     $customer_user = wp_get_current_user();
     $dbInstance = db::getInstance();
-    $action = $_REQUEST['action'];
-    $draw = $_REQUEST["draw"];
-    $count = $_REQUEST["length"];
-    $skip = $_REQUEST["start"];
+    $action = filter_var($_REQUEST['action'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $draw = filter_var($_REQUEST['draw'], FILTER_SANITIZE_NUMBER_INT);
+    $count = filter_var($_REQUEST['length'], FILTER_SANITIZE_NUMBER_INT);
+    $skip = filter_var($_REQUEST['start'], FILTER_SANITIZE_NUMBER_INT);
     if ($action == "payments") {
         $payments = R::getAll("SELECT * FROM card_cam WHERE time_expire <> 0.00 AND user_id = :value1 AND user_ask_to_delete = 0 AND TIMESTAMPDIFF(MONTH, order_day, CURDATE()) < 6 ORDER BY ID DESC", [':value1' => $customer_user->ID]);
         $paymentsRes = [];
@@ -267,11 +299,11 @@ if ($q_type == "start_chat") {
 } else if ($q_type == "model_statistic") {
     $modelUser = wp_get_current_user();
     $dbInstance = db::getInstance();
-    $startDate = $_REQUEST['startDate'];
-    $endDate = $_REQUEST['endDate'];
-    $draw = $_REQUEST["draw"];
-    $count = $_REQUEST["length"];
-    $skip = $_REQUEST["start"];
+    $startDate = filter_var($_REQUEST['startDate'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $endDate = filter_var($_REQUEST['endDate'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $draw =  filter_var($_REQUEST['draw'], FILTER_SANITIZE_NUMBER_INT);
+    $count = filter_var($_REQUEST['length'], FILTER_SANITIZE_NUMBER_INT);
+    $skip = filter_var($_REQUEST['start'], FILTER_SANITIZE_NUMBER_INT);
     $totalTimeUseInSeconds = R::getRow("SELECT IFNULL(SUM(time_use), 0) AS time_use FROM chat_time_use WHERE girl_num = :value1 AND datein >= :value2 AND datein <= DATE_ADD(:value3, INTERVAL 1 DAY)", [':value1' => $modelUser->ID, ':value2' => $startDate, ':value3' => $endDate]);
     $chat_time_uses = R::getAll("SELECT * FROM chat_time_use where time_use>0 and girl_num = :value1 AND datein >= :value2 AND datein <= DATE_ADD(:value3, INTERVAL 1 DAY) order by ID desc", [':value1' => $modelUser->ID, ':value2' => $startDate, ':value3' => $endDate]);
     $chat_time_use_res = [];
@@ -308,7 +340,7 @@ if ($q_type == "start_chat") {
     if (!empty($_FILES)) {
         $current_user = wp_get_current_user();
         $dbInstance = db::getInstance();
-        $action = $_REQUEST['action'];
+        $action = filter_var($_REQUEST['action'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
         if ($action == "avatar") {
             $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
             $sub_dir = "/uploads/files/";
@@ -317,7 +349,7 @@ if ($q_type == "start_chat") {
             $db_file = $sub_dir . $new_file_name;
             move_uploaded_file($_FILES["avatar_image"]["tmp_name"], $target_file);
             model_helper::insertOrUpdateUserAvatar($db_file, $current_user->ID);
-            echo 'avatar update successfully';
+            echo 'האווטר עודכן בהצלחה';
         } else if ($action == "gallery") {
             $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
             $sub_dir = "/uploads/files/";
@@ -326,7 +358,7 @@ if ($q_type == "start_chat") {
             $db_file = $sub_dir . $new_file_name;
             move_uploaded_file($_FILES["image"]["tmp_name"], $target_file);
             model_helper::insertModelImageToGallery($new_file_name, $current_user->ID);
-            echo 'image upload successfully';
+            echo 'הקובץ הועלה בהצלחה';
         }
     }
     die();
@@ -337,13 +369,37 @@ if ($q_type == "start_chat") {
     $images = [];
     foreach ($imagesDb as $image) {
         $cardNew['image_name'] = "/wp-content/uploads/files/" . $image['image_name'];
+        $cardNew['index'] = $image['ID'];
         $images[] = $cardNew;
     }
 
     echo json_encode($images);
     die();
+} else if ($q_type == "delete_image_gallery") {
+    $current_user = wp_get_current_user();
+    $dbInstance = db::getInstance();
+    $imageID = $_GET['id'];
+    $image = R::getRow("SELECT * FROM models_gallery where ID = :value1 and girl_num = :value2", [':value1' => $imageID, ':value2' =>  $current_user->ID]);
+    if ($image) {
+        // Remove a file from the system
+        $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
+        $sub_dir = "/uploads/files/";
+        $new_file_name =   $image['image_name'];
+        $file =  $target_dir . $sub_dir . $new_file_name;
+        if (file_exists($file)) {
+            if (unlink($file)) {
+                R::exec("DELETE FROM models_gallery WHERE ID = :value1 and girl_num=:value2", [':value1' => $imageID, ':value2' =>  $current_user->ID]);
+                echo "הקובץ נמחק בהצלחה.";
+            } else {
+                echo "אין אפשרות למחוק את הקובץ.";
+            }
+        } else {
+            echo "הקובץ לא נמצא.";
+        }
+    }
+    die();
 } else if ($q_type == "view_model_profile") {
-    $model_guid = $_REQUEST['model_guid'];
+    $model_guid = filter_var($_REQUEST['model_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $dbInstance = db::getInstance();
     $modelUser = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$model_guid]);
     $imagesDb = R::getAll("SELECT * FROM models_gallery where girl_num = :value1 order by ID desc", [':value1' => $modelUser['ID']]);
@@ -382,8 +438,8 @@ if ($q_type == "start_chat") {
 } else if ($q_type == "block_user") {
     $model_user = wp_get_current_user();
     $dbInstance = db::getInstance();
-    $user_guid = $_REQUEST['user_guid'];
-    $room_id = $_REQUEST['room_id'];
+    $user_guid = filter_var($_REQUEST['user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $room_id = filter_var($_REQUEST['room_id'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $user = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$user_guid]);
     $chat = R::getRow('SELECT * FROM wp_whatsapp_chats WHERE room_id=? LIMIT 1', [$room_id]);
     if ($user['ID'] == $chat["user_num"] && $model_user->ID == $chat['girl_num']) {
@@ -394,8 +450,8 @@ if ($q_type == "start_chat") {
 } else if ($q_type == "unblock_user") {
     $model_user = wp_get_current_user();
     $dbInstance = db::getInstance();
-    $user_guid = $_REQUEST['user_guid'];
-    $room_id = $_REQUEST['room_id'];
+    $user_guid = filter_var($_REQUEST['user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $room_id = filter_var($_REQUEST['room_id'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $user = R::getRow('SELECT * FROM wp_users WHERE user_guid = ? LIMIT 1', [$user_guid]);
     $chat = R::getRow('SELECT * FROM wp_whatsapp_chats WHERE room_id=? LIMIT 1', [$room_id]);
     if ($user['ID'] == $chat["user_num"] && $model_user->ID == $chat['girl_num']) {

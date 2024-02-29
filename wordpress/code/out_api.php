@@ -3,7 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 require_once($_SERVER['DOCUMENT_ROOT'] . '/code/classes/includes.php');
 require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-config.php');
-$q_type = $_REQUEST['q_type'];
+$q_type = filter_var($_REQUEST['q_type'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 $helpersInstance = new helpers();
 
 if ($q_type == "prices_list") {
@@ -36,8 +36,8 @@ if ($q_type == "prices_list") {
 
         $url = 'https://www.newcam18.com/cam-online-2024/user_payment_request.aspx';
         $current_user = wp_get_current_user();
-        $packageID = $data->packageID;
-
+        $packageID = filter_var($data->packageID, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+        $ccID = filter_var($data->ccID, FILTER_SANITIZE_NUMBER_INT);
         $dbInstance = db::getInstance();
         $sqlPrices = "SELECT * FROM prices WHERE id=? LIMIT 1";
         $price = R::getAll($sqlPrices, [$packageID]);
@@ -46,7 +46,7 @@ if ($q_type == "prices_list") {
         $data->ipAddress = $ipAddress;
         if ($data->userPayNewCard === false) {
             $sqlCard = "SELECT * FROM cc_details WHERE id=? LIMIT 1";
-            $ccDetails = R::getAll($sqlCard, [$data->ccID])[0];
+            $ccDetails = R::getAll($sqlCard, [$ccID])[0];
             $data->ccNumber = $ccDetails['card_number'];
             $data->ccExpire = $ccDetails['month_date'] . "/" . $ccDetails['year_date'];
             $data->ccCCV = $ccDetails['cvv'];
@@ -62,19 +62,19 @@ if ($q_type == "prices_list") {
         $creditCard = new CreditCard();
         $creditCard->email = $jsonResponse->email;
         $creditCard->lastName = $jsonResponse->lastName;
-        $creditCard->card_number = $data->ccNumber;
+        $creditCard->card_number = filter_var($data->ccNumber, FILTER_SANITIZE_NUMBER_INT);
         $creditCard->firstName = $jsonResponse->firstName;
-        $creditCard->cvv = $data->ccCCV;
-        $creditCard->last_digits = substr($data->ccNumber, -4);
+        $creditCard->cvv = filter_var($data->ccCCV, FILTER_SANITIZE_NUMBER_INT);
+        $creditCard->last_digits = substr(filter_var($data->ccNumber, FILTER_SANITIZE_NUMBER_INT), -4);
         $creditCard->user_id = $current_user->ID;
         $creditCard->id_number = $jsonResponse->id_number;
-        $creditCard->month_date = substr($data->ccExpire, 0, 2);
-        $creditCard->year_date = substr($data->ccExpire, 3, 2);
+        $creditCard->month_date =  substr(filter_var($data->ccExpire, FILTER_SANITIZE_FULL_SPECIAL_CHARS), 0, 2);
+        $creditCard->year_date =   substr(filter_var($data->ccExpire, FILTER_SANITIZE_FULL_SPECIAL_CHARS), 3, 2);
         $ccDetailsID = credit_card_payment::insertCCDetailsIfNotExists($creditCard);
 
         $paymentData = new PaymentData();
         $paymentData->user_id = $current_user->ID;
-        $paymentData->price = $data->price;
+        $paymentData->price = filter_var($data->price, FILTER_SANITIZE_NUMBER_FLOAT);
         if ($jsonResponse->temp_answer === "0") {
             $paymentData->paymentStatus = "1"; // success no 3d needed
         } else if ($jsonResponse->temp_answer === "2000") {
@@ -108,18 +108,28 @@ if ($q_type == "prices_list") {
     //$json = stripslashes($_REQUEST['json']);
     $data = json_decode($json);
     $dbInstance = db::getInstance();
-    credit_card_payment::insert3DLog($data->transcationID, $data->errorCode, $data->errorMessage, $data->orderID, $data->security);
-    if ($data->errorCode === "0") { // success
+    $transcationID = filter_var($data->transcationID, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $errorCode = filter_var($data->errorCode, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $errorMessage = filter_var($data->errorMessage, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    $orderID = filter_var($data->orderID, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+    credit_card_payment::insert3DLog(
+        $transcationID,
+        $errorMessage,
+        $errorMessage,
+        $orderID,
+        filter_var($data->security, FILTER_SANITIZE_FULL_SPECIAL_CHARS)
+    );
+    if ($errorCode === "0") { // success
         $sqlUpdate = "UPDATE card_cam SET time_expire=timeExpiredTemp,approved3D=1,paymentStatus=1,inatecTransactionStatus=? WHERE orderId = ? and inatecTransactionid = ?";
     } else { // failed
         $sqlUpdate = "UPDATE card_cam SET paymentStatus=2,price=0,inatecTransactionStatus=? WHERE orderId = ? and inatecTransactionid = ?";
     }
-    R::exec($sqlUpdate, [$data->errorCode . ' ' . $data->errorMessage, $data->orderID, $data->transcationID]);
+    R::exec($sqlUpdate, [$errorCode . ' ' . $errorMessage, $orderID, $transcationID]);
     errors::addError("Error: " . json_encode($json), "out_api.php line 161");
     echo "ok";
     die();
 } else if ($q_type == "check3d_status") {
-    $postOrderID = $_REQUEST['postOrderID'];
+    $postOrderID = filter_var($_REQUEST['postOrderID'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $dbInstance = db::getInstance();
     $current_user = wp_get_current_user();
     $sqlCard = "SELECT * FROM card_cam WHERE orderId=? and user_id=? LIMIT 1";
@@ -128,11 +138,9 @@ if ($q_type == "prices_list") {
     if ($paymentSts['paymentStatus'] != "0") {
         $responseJson->state = "ready";
         $responseJson->status = $paymentSts['paymentStatus'] == "1" ? "success" : "failed";
-
     } else {
         $responseJson->state = "not ready";
     }
     echo json_encode($responseJson);
     die();
 }
-
