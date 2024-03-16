@@ -7,20 +7,32 @@ const user_type = params.get("user_type");
 let localStream;
 let peerConnection;
 let userStartChat = 0;
+let disconnectMessageShowen = false;
 let audio;
 let video;
 const config = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }], // Google's public STUN server
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: "turn:116.203.70.128:80?transport=udp",
+      username: "test",
+      credential: "test",
+    },
+    {
+      urls: "turn:116.203.70.128:80?transport=tcp",
+      username: "test",
+      credential: "test",
+    },
+  ], // Google's public STUN server
 };
 
 // Initialize WebSocket connection
-const socket = new WebSocket("wss://cam.afikim.pro:8080");
+const socket = new WebSocket("wss://mifgashim.net:8080");
 
 function connectChat() {
   peerConnection = new RTCPeerConnection(config);
   peerConnection.ontrack = function (event) {
     $("#localVideo").css("width", "25%");
-    console.log("ontrack event");
     remoteVideo.srcObject = event.streams[0];
     remoteVideo.onloadedmetadata = function () {
       remoteVideo.play();
@@ -37,7 +49,6 @@ function connectChat() {
           data: "startCall",
         })
       );
-      //console.log("handleLogin");
     }
   });
   peerConnection.onicecandidate = function (event) {
@@ -60,8 +71,6 @@ function connectChat() {
         break;
       case "disconnected":
         console.log("The connection disconnected");
-        //alert("aa")
-        ReconnectChat();
         break;
       case "failed":
         console.log("The connection failed");
@@ -74,40 +83,38 @@ function connectChat() {
 }
 
 $(document).ready(function () {});
-function handleOffer(offer, name) {
-  console.log("239-handleOffer");
+async function handleOffer(offer, name) {
   try {
     window.RTCSessionDescription =
       window.RTCSessionDescription ||
       window.mozRTCSessionDescription ||
       window.webkitRTCSessionDescription;
     var RTCSessionDescription_ = new window.RTCSessionDescription(offer);
-    peerConnection.setRemoteDescription(RTCSessionDescription_);
+    await peerConnection.setRemoteDescription(RTCSessionDescription_);
+
+    // Now that setRemoteDescription is complete, we can safely create an answer
+    peerConnection
+      .createAnswer()
+      .then(function (answer) {
+        peerConnection.setLocalDescription(answer);
+        socket.send(
+          JSON.stringify({
+            type: "answer",
+            user_guid: user_guid,
+            room_guid: room_guid,
+            user_type: user_type,
+            data: answer,
+          })
+        );
+      })
+      .catch(function (error) {
+        logError(error.message);
+        console.log(error.message);
+        alert("Error when creating an answer");
+      });
   } catch (err) {
-    logError("228-" + err.message);
     console.log("228-" + err.message);
   }
-
-  //create an answer to an offer
-  peerConnection.createAnswer(
-    function (answer) {
-      console.log("239-createAnswer");
-      peerConnection.setLocalDescription(answer);
-      socket.send(
-        JSON.stringify({
-          type: "answer",
-          user_guid: user_guid,
-          room_guid: room_guid,
-          user_type: user_type,
-          data: answer,
-        })
-      );
-    },
-    function (error) {
-      logError(err.message);
-      alert("Error when creating an answer");
-    }
-  );
 }
 socket.addEventListener("open", function (event) {
   // Send identification message
@@ -125,18 +132,24 @@ socket.addEventListener("open", function (event) {
 socket.addEventListener("message", async function (event) {
   // if (userStartChat == "1") {
   const data = JSON.parse(event.data);
-  console.log(event.data);
   if (typeof data.error != "undefined") {
-    if (data.error === "sessionSts1") {
-      alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
-    } else if (data.error === "session_finished") {
-      alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
-    } else if (data.error === "moreThanOneUser") {
-      alert("Other user discounected");
-    } else if (data.error === "girlDiscounectInternet") {
-      alert("Other user discounected");
-    } else if (data.error === "finishTime") {
-      alert("הזמן שלך עבר והמפגש הסתיים");
+    if (disconnectMessageShowen == false) {
+      if (data.error === "sessionSts1") {
+        disconnectMessageShowen = true;
+        alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
+      } else if (data.error === "session_finished") {
+        disconnectMessageShowen = true;
+        alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
+      } else if (data.error === "moreThanOneUser") {
+        disconnectMessageShowen = true;
+        alert("אין אפשרות לפתוח יותר מחלון אחד בו זמנית");
+      } else if (data.error === "girlDiscounectInternet") {
+        disconnectMessageShowen = true;
+        alert("הבחורה ניתקה מהאינטרנט");
+      } else if (data.error === "finishTime") {
+        disconnectMessageShowen = true;
+        alert("נגמר הזמן שלך");
+      }
     }
     window.location.href = "/";
   }
@@ -155,11 +168,9 @@ socket.addEventListener("message", async function (event) {
   } else if (data.type === "answer") {
     handleAnswer(data.data);
   } else if (data.type === "offer") {
-    console.log("GET-offer", "offer");
-    handleOffer(data.data, data.type);
+    await handleOffer(data.data, data.type);
   } else if (data.type === "candidate") {
     handleCandidate(data.data);
-    // await peerConnection.addIceCandidate(new RTCIceCandidate(data.data));
   }
   // }
 });
@@ -191,13 +202,16 @@ function handleLogin(success, type, callback) {
   if (success === false) {
     alert("Ooops...try a different username");
   } else {
+    navigator.getUserMedia =
+      navigator.getUserMedia ||
+      navigator.webkitGetUserMedia ||
+      navigator.mozGetUserMedia ||
+      navigator.mediaDevices;
     navigator.mediaDevices
       .getUserMedia({ video: video, audio: audio }) // Request both video and audio
       .then(function (myStream) {
         localVideo.srcObject = myStream; // Display local stream in a video element
         myStream.getTracks().forEach((track) => {
-          console.log("track", track); // Log track details for debugging
-          console.log("peerConnection", peerConnection); // Log peerConnection state for debugging
           if (peerConnection) {
             // Validate peerConnection is not null or undefined
             peerConnection.addTrack(track, myStream); // Add each track to the peer connection
@@ -220,7 +234,7 @@ async function startCall(num) {
   $("#disconnect").show();
 
   if (num == 1) {
-    video = true;
+    video = { facingMode: "user" };
     audio = true;
   } else {
     video = false;
@@ -238,7 +252,6 @@ function disconnect() {
       data: "disconnect",
     })
   );
-  console.log("Function called by worker at", new Date());
 }
 function update_time_use() {
   socket.send(
@@ -250,7 +263,6 @@ function update_time_use() {
       data: "update",
     })
   );
-  //console.log("Function called by worker at", new Date());
 }
 
 setInterval(update_time_use, 3000); // Call doSomething every 3 seconds

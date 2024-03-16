@@ -19,24 +19,24 @@ require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-config.php');
 
 ?>
 <script>
-    const socket = new WebSocket('wss://cam.afikim.pro:8080');
+    const socket = new WebSocket('wss://mifgashim.net:8080');
 
-socket.addEventListener('open', function (event) {
-    console.log('Connected to WebSocket server');
-    
-    // Send a message to the server
-    socket.send('Hello, WebSocket server!');
-});
+    socket.addEventListener('open', function(event) {
+        console.log('Connected to WebSocket server');
 
-socket.addEventListener('message', function (event) {
-    console.log('Received message:', event.data);
-});
+        // Send a message to the server
+        socket.send('Hello, WebSocket server!');
+    });
 
-socket.addEventListener('close', function (event) {
-    console.log('Connection closed');
-});
+    socket.addEventListener('message', function(event) {
+        console.log('Received message:', event.data);
+    });
 
-socket.addEventListener('error', function (event) {
-    console.error('WebSocket error:', event);
-});
+    socket.addEventListener('close', function(event) {
+        console.log('Connection closed');
+    });
+
+    socket.addEventListener('error', function(event) {
+        console.error('WebSocket error:', event);
+    });
 </script>

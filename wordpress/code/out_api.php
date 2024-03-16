@@ -23,9 +23,21 @@ if ($q_type == "prices_list") {
         $modifiedUserCards[] = $cardNew;
     }
 
+
+    $prices_per_message_sql = "SELECT * FROM whatsapp_message_types WHERE show_row_in_website=1";
+    $prices_per_message = R::getAll($prices_per_message_sql);
+    $modifiedPrices = [];
+
+    foreach ($prices_per_message as $price) {
+        $priceNew['text'] = $price['description'];
+        $priceNew['price'] = $price['price_per_message_in_seconds'];
+        $modifiedPrices[] = $priceNew;
+    }
+
     $response = new stdClass();
     $response->prices = $prices;
     $response->cards = $modifiedUserCards;
+    $response->prices_per_messages = $modifiedPrices;
     echo json_encode($response);
     die();
 } else if ($q_type == "user_payment_request") {

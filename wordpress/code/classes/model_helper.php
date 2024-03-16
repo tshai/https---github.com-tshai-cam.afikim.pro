@@ -16,6 +16,40 @@ class model_helper
         }
     }
 
+    public static function getMessageType($wp_message_id)
+    {
+        if ($wp_message_id == null || $wp_message_id == 0) {
+            return "";
+        }
+        $dbInstance = db::getInstance();
+        $wp_message = R::getRow('SELECT * FROM wp_whatsapp_messages WHERE id=?', [$wp_message_id]);
+        if ($wp_message) {
+            $wp_message_type = R::getRow('SELECT * FROM whatsapp_message_types WHERE id=?', [$wp_message['message_type']]);
+            return $wp_message_type['description'];
+        } else {
+            return "";
+        }
+    }
+
+    public static function getUserOpenLinkChatTimeUseByMessageID($wp_message_id)
+    {
+        if ($wp_message_id == null || $wp_message_id == 0) {
+            return false;
+        }
+        $dbInstance = db::getInstance();
+        $chat_time_use = R::getRow('SELECT * FROM chat_time_use WHERE wp_message_id=?', [$wp_message_id]);
+        if ($chat_time_use) {
+            $user_open_link = $chat_time_use['user_open_link'];
+            if ($user_open_link) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
     public static function getGirlBlockUser($girl_num, $user_num)
     {
         $dbInstance = db::getInstance();
@@ -74,7 +108,7 @@ class model_helper
 
         // Check if $avatar is not false and not empty
         if ($avatar !== false && !empty($avatar)) {
-            return $avatar["meta_value"];
+            return htmlspecialchars_decode($avatar["meta_value"]);
         } else {
             // Handle the case where no item was found. You might return a default value or null.
             return ""; // Or return a default avatar or any other default value as needed
@@ -195,6 +229,114 @@ class model_helper
         }
     }
 
+    public static function resizeImage($tmpFileName,  $new_file_name)
+    {
+        try {
+            $target_dir = $_SERVER['DOCUMENT_ROOT'] . "/wp-content";
+            $sub_dir = "/uploads/files/";
+
+            $target_file = $target_dir . $sub_dir . $new_file_name;
+            $db_file = $sub_dir . $new_file_name;
+
+            // Load the uploaded image
+            $imageInfo = getimagesize($tmpFileName);
+            $width = $imageInfo[0];
+            $height = $imageInfo[1];
+
+            // Calculate new height to maintain aspect ratio
+            $new_width = 600;
+            $new_height = ($height / $width) * $new_width;
+
+            // Create a new true color image
+            $new_image = imagecreatetruecolor($new_width, $new_height);
+
+            // Depending on the image type, create a new image from the file
+            switch ($imageInfo['mime']) {
+                case 'image/jpeg':
+                    $uploaded_image = imagecreatefromjpeg($tmpFileName);
+                    break;
+                case 'image/png':
+                    $uploaded_image = imagecreatefrompng($tmpFileName);
+                    break;
+                case 'image/gif':
+                    $uploaded_image = imagecreatefromgif($tmpFileName);
+                    break;
+                default:
+                    die('Unsupported image format');
+            }
+
+            // Copy and resize the uploaded image to the new image
+            imagecopyresampled($new_image, $uploaded_image, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
+
+            // Save the resized image to the target location
+            switch ($imageInfo['mime']) {
+                case 'image/jpeg':
+                    imagejpeg($new_image, $target_file, 30); // Reduced quality for smaller file size
+                    break;
+                case 'image/png':
+                    imagepng($new_image, $target_file, 9); // Increased compression level
+                    break;
+                case 'image/gif':
+                    imagegif($new_image, $target_file);
+                    break;
+            }
+
+
+            // Free up memory
+            imagedestroy($new_image);
+            imagedestroy($uploaded_image);
+        } catch (Exception $ex) {
+            errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
+        }
+        return $db_file;
+    }
+
+    public static function checkGirlCanSendMessages($chatID)
+    {
+        $dbInstance = db::getInstance();
+        $lastTwoMessagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? order by id desc LIMIT 2";
+        $lastTwoMessagesParamsArr = [$chatID];
+        $lastTwoMessages = R::getAll($lastTwoMessagesSql, $lastTwoMessagesParamsArr);
+        $canSend = true;
+        $girlSendCount = 0;
+        foreach ($lastTwoMessages as $message) {
+            if ($message['girl_send'] == 1) { // girl can send only 2 messages at a time
+                if ($message['message_type'] == 3) { // chat link
+                    $getUserOpenLinkChatTimeUseByMessageID = model_helper::getUserOpenLinkChatTimeUseByMessageID($message['id']);
+                    if ($getUserOpenLinkChatTimeUseByMessageID == false) {
+                        $girlSendCount++;
+                    }
+                } else {
+                    $girlSendCount++;
+                }
+            }
+        }
+        if ($girlSendCount == 2) {
+            $canSend = false;
+        }
+        if (!empty($lastTwoMessages)) {
+            // Get the last element of the array
+            $lastMessage = $lastTwoMessages[0];
+            if ($lastMessage['message_type'] == 4) { // if welcome, girl can't send until the user send
+                $canSend = false;
+            }
+        }
+        return $canSend;
+    }
+
+    public static function getUserUniqueNumberForWhatsapp($user_id)
+    {
+        $dbInstance = db::getInstance();
+        $user = R::getRow('SELECT * FROM wp_users WHERE ID=?', [$user_id]);
+        if ($user) {
+            $unique_user_code = $user['unique_user_code'];
+            $userMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user_id, "nickname"]);
+            return "UserID->" . $unique_user_code . " || Nickname-> " . $userMetaName["meta_value"] . ":\r\n\r\n";
+        } else {
+            return "";
+        }
+    }
+
     public static function isCurrentHourInRange($startHour, $endHour)
     {
         $startTime = strtotime($startHour);
@@ -202,7 +344,6 @@ class model_helper
         // Get current time
         $currentHour = date("H:i");
         $currentTime = strtotime($currentHour);
-
         // Check if range spans over midnight
         if ($endTime < $startTime) {
             // Range spans over midnight
@@ -232,5 +373,36 @@ class model_helper
         // Get the MIME type of the uploaded file
         $fileMimeType = mime_content_type($fileTmpName);
         return in_array($fileMimeType, $videoMimeTypes);
+    }
+
+    public static function isAudioUploaded($fileTmpName)
+    {
+        $audioMimeTypes = ['audio/mpeg', 'audio/mp3'];
+        // Get the MIME type of the uploaded file
+        $fileMimeType = mime_content_type($fileTmpName);
+        return in_array($fileMimeType, $audioMimeTypes);
+    }
+
+    public static function checkMessageForShortCode($message)
+    {
+        try {
+            $dbInstance = db::getInstance();
+            $chat_short_codes = R::getAll('SELECT * FROM chat_short_codes');
+            foreach ($chat_short_codes as $chat_short_code) {
+                $short_codes = explode(",", $chat_short_code['array_of_keywords']);
+                foreach ($short_codes as $short_code) {
+                    if (str_contains(strtolower(trim($message)), strtolower(trim($short_code)))) {
+                        $response = new stdClass();
+                        $response->action = $chat_short_code['action'];
+                        $response->code = $short_code;
+                        return $response;
+                    }
+                }
+            }
+            return "";
+        } catch (Exception $ex) {
+            errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
+            return "";
+        }
     }
 }

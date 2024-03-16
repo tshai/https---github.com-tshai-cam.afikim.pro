@@ -16,6 +16,39 @@ class whatsapp
         }
     }
 
+    public static function checkWelcomeMessageWasSendToday($userNum, $girlNum)
+    {
+        $dbInstance = db::getInstance();
+        $mysqli = $dbInstance->mysqli();
+        $chatsSql = "SELECT * FROM wp_whatsapp_chats WHERE girl_num=? and user_num=? LIMIT 1";
+        $chats = R::getAll($chatsSql, [$girlNum, $userNum]);
+        if ($chats) {
+            $wp_whatsapp_chats_id = $chats[0]["ID"];
+            $currentDate = new DateTime(); // Uses the current date and time
+            // Format the date to a string that matches your database's expected format
+            $formattedDate = $currentDate->format('Y-m-d');
+            $welcomeMessage = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? and message_type=4 and DATE(date_in) = ? LIMIT 1";
+            $welcomeMessageList = R::getAll($welcomeMessage, [$wp_whatsapp_chats_id, $formattedDate]);
+            if ($welcomeMessageList) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    public static function getPricePerMessageTypeInSeconds($messageTypeID)
+    {
+        $dbInstance = db::getInstance();
+        $mysqli = $dbInstance->mysqli();
+        $whatsapp_message_types = "SELECT * FROM whatsapp_message_types WHERE ID=? LIMIT 1";
+        $whatsapp_message_type_res =  R::getRow($whatsapp_message_types, [$messageTypeID]);
+        return $whatsapp_message_type_res["price_per_message_in_seconds"];
+    }
+
+
     public static function insertMessageToWhatsApp($messageText, $messageType, $userNum, $girlNum, $girl_send, $file_name = null): int
     {
         $dbInstance = db::getInstance();
@@ -36,9 +69,9 @@ class whatsapp
             R::exec($updateSql, $updateParams);
         } else {
             $room_id = uniqid();
-            $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,newest_message_type=?,girl_read) VALUES (?, ?, ?, ?,?,?,?)";
+            $sqlChatsInsert = "INSERT INTO wp_whatsapp_chats (girl_num, user_num, date_in, room_id, last_time_update,newest_message_cut,newest_message_type,girl_read) VALUES (?, ?, ?, ?,?,?,?,?)";
             $stmtChatsInsert = $mysqli->prepare($sqlChatsInsert);
-            $stmtChatsInsert->bind_param("iissssi", $girlNum, $userNum, $date, $room_id, $date, $substringMessage,  $messageType, $girl_read);
+            $stmtChatsInsert->bind_param("iissssii", $girlNum, $userNum, $date, $room_id, $date, $substringMessage,  $messageType, $girl_read);
             if (!$stmtChatsInsert->execute()) {
                 errors::addError("Error: " . $stmtChatsInsert->error, "classes/whatsapp.php line 43");
             }
@@ -110,7 +143,6 @@ class whatsapp
                 'message' => $message
             ]);
             $res = whatsapp::webRequestPost($jsonUrl);
-            errors::addError("SendMessage res: " . $res, "classes/whatsapp.php line 115");
             $resJson = json_decode($res);
             if (isset($resJson->status) && strtolower($resJson->status) == "success") {
                 return $resJson;
@@ -174,6 +206,58 @@ class whatsapp
         return $array;
     }
 
+    public static function getCaptionFromReply($jsonObject, $pathArray, $whatsapp, $senderPhone)
+    {
+        $quotedMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'conversation']);
+        $quotedMessageText = whatsapp::getNestedArrayValue($jsonObject, $quotedMessage);
+        $pathCaptionMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'documentWithCaptionMessage', 'message', 'documentMessage', 'caption']);
+        $documentWithCaptionMessage = whatsapp::getNestedArrayValue($jsonObject, $pathCaptionMessage);
+        $pathImageMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'imageMessage', 'caption']);
+        $imageMessage = whatsapp::getNestedArrayValue($jsonObject, $pathImageMessage);
+        $pathDocumentMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'documentMessage', 'caption']);
+        $documentMessage = whatsapp::getNestedArrayValue($jsonObject, $pathDocumentMessage);
+        $pathVideoMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'videoMessage', 'caption']);
+        $videoMessage = whatsapp::getNestedArrayValue($jsonObject, $pathVideoMessage);
+        $pathAudioMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'audioMessage', 'caption']);
+        $audioMessage = whatsapp::getNestedArrayValue($jsonObject, $pathAudioMessage);
+        $pathStickerMessage = array_merge($pathArray, ['contextInfo', 'quotedMessage', 'stickerMessage', 'caption']);
+        $stickerMessage = whatsapp::getNestedArrayValue($jsonObject, $pathStickerMessage);
+        $caption = "";
+        if (!empty($quotedMessageText)) {
+            $caption = $quotedMessageText;
+        } else if (!empty($documentWithCaptionMessage)) {
+            $caption = $documentWithCaptionMessage;
+        } else if (!empty($imageMessage)) {
+            $caption = $imageMessage;
+        } else if (!empty($documentMessage)) {
+            $caption = $documentMessage;
+        } else if (!empty($videoMessage)) {
+            $caption = $videoMessage;
+        } else if (!empty($audioMessage)) {
+            $caption = $audioMessage;
+        } else if (!empty($stickerMessage)) {
+            $caption = $stickerMessage;
+        }
+
+        if ($caption == null || $caption == "") {
+            $whatsappRes = $whatsapp->sendMessage($senderPhone, "הודעת מערכת: לא ניתן לשלוח הודעות כאן עליך להיכנס לכרטיס של המשתמש");
+            die();
+        }
+        return $caption;
+    }
+
+    public static function girlCanGetWhatsapp($modelUserID)
+    {
+        $modelUserFromWorking = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUserID, "online_from"]);
+        $modelUserToWorking = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUserID, "online_to"]);
+        $isTimeInRangeToSendMessage = model_helper::isCurrentHourInRange($modelUserFromWorking['meta_value'], $modelUserToWorking['meta_value']);
+        if ($isTimeInRangeToSendMessage) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     public static function extraxtMessageFromJson($jsonObject)
     {
         $pathMessageText = ['data', 'data', 'messages', 0, 'message', 'conversation'];
@@ -235,5 +319,37 @@ class whatsapp
         // Concatenate to get the full URL
         $currentDomain = $protocol . $domainName;
         return $currentDomain; // Outputs something like https://example.com
+    }
+
+    public static function getHelpShortCodeContent($isModel)
+    {
+        try {
+            $isModel = ($isModel == 1  ? 1 : 0);
+            $dbInstance = db::getInstance();
+            $mysqli = $dbInstance->mysqli();
+            $sql = "SELECT * FROM chat_short_codes WHERE action<>'listcodes' and is_girl_action=?";
+            $chat_short_codes = R::getAll($sql, [$isModel]);
+            $messageToSendWithHelp = "";
+            foreach ($chat_short_codes as $chat_short_code) {
+                $messageToSendWithHelp .= $chat_short_code['array_of_keywords'] . "->" . $chat_short_code['action_description_users'] . "\n\r";
+            }
+            return $messageToSendWithHelp;
+        } catch (Exception $ex) {
+            errors::addError($ex->getMessage(), "whatsapp_api.php->send_message");
+            return "";
+        }
+    }
+
+    public static function insertChatTimeUseAndCheckTime($modelUser, $user, $send_message, $new_message_id, $price_per_message, $whatsapp, $senderPhone, $modelPhone)
+    {
+        ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $user['ID'], $send_message, $new_message_id, $price_per_message, 0, 0);
+        if ($send_message == 2) { // fix and send to girl also
+            $whatsapp->sendMessage($senderPhone, "הודעת מערכת: שלחת בהצלחה מתנה לדגם זה.");
+            $whatsapp->sendMessage($modelPhone, model_helper::getUserUniqueNumberForWhatsapp($user['ID']) . "הודעת מערכת: קיבלת מתנה");
+        }
+        $time_left = ChatTimeUse::getTimeLeft($user['ID']);
+        if ($time_left <= 60) {
+            $whatsapp->sendMessage($senderPhone, "הודעת מערכת: נשארו לך פחות מדקה לשימוש במערכת. לחץ על הקישור להטענת חשבונך והמשך התהליך. https://mifgashim.net/user-payment");
+        }
     }
 }

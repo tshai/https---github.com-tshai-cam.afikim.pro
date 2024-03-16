@@ -17,37 +17,49 @@ class websocketHelpers
 
     private function __construct()
     {
+        $this->setupDatabaseConnection();
+    }
+
+    private function setupDatabaseConnection()
+    {
         try {
             $this->host = '127.0.0.1';
             $this->easy_wordpress_user = 'wp_cam.afikim.pro';
             $this->easy_wordpress_password = 'pqOewg';
-            $this->easy_wordpress_database = 'wp_MM_cam_afikim_pro';
-            $charset = 'utf8mb4'; // Defaulting to utf8mb4 if not defined elsewhere
-            $dsn = "mysql:host={$this->host};dbname={$this->easy_wordpress_database};charset=$charset";
+            $this->easy_wordpress_database = 'mifgashim';
+            $charset = 'utf8mb4';
 
+            $dsn = "mysql:host={$this->host};dbname={$this->easy_wordpress_database};charset=$charset";
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
-                PDO::ATTR_PERSISTENT => true, // Enable persistent connections
+                PDO::ATTR_PERSISTENT => true,
             ];
-            // Create the PDO connection
-            $this->pdo = new PDO($dsn, $this->easy_wordpress_user, $this->easy_wordpress_password, $options);
 
-            // Create the mysqli connection
+            $this->pdo = new PDO($dsn, $this->easy_wordpress_user, $this->easy_wordpress_password, $options);
             $this->mysqli = new mysqli($this->host, $this->easy_wordpress_user, $this->easy_wordpress_password, $this->easy_wordpress_database);
+
+            websocketHelpers::writeToLog("Connecting to the database\n");
         } catch (Exception $e) {
-            // Handle any connection error
-            websocketHelpers::writeToLog($e->getMessage());
-            die("DB Connection failed: " . $e->getMessage());
+            websocketHelpers::writeToLog("DB Connection failed: " . $e->getMessage());
         }
     }
 
+    public function closeConnection()
+    {
+        if ($this->pdo) {
+            $this->pdo = null;
+        }
+        if ($this->mysqli) {
+            $this->mysqli->close();
+            $this->mysqli = null;
+        }
+    }
 
     public static function getInstance()
     {
         if (self::$instance == null) {
-            //  echo "37";
             self::$instance = new websocketHelpers();
         }
         self::$instance->checkConnection();
@@ -56,16 +68,24 @@ class websocketHelpers
 
     public static function writeToLog($message)
     {
-        $log_file =  PROJECT_ROOT . '/code/websocket_logs.txt';
+        $log_file = PROJECT_ROOT . '/code/websocket_logs.txt';
         $logMessage = date('[Y-m-d H:i:s]') . ' ' . $message . PHP_EOL;
         file_put_contents($log_file, $logMessage, FILE_APPEND | LOCK_EX);
     }
 
-
-    // Optionally, you can add a method to close the database connection
-    public function closeConnection()
+    public function checkConnection()
     {
-        $this->pdo = null;
+        try {
+            if ($this->mysqli->ping() === false) {
+                $this->closeConnection(); // Close previous connections before re-establishing new ones
+                $this->setupDatabaseConnection();
+                websocketHelpers::writeToLog("Reconnected to the database\n");
+            }
+        } catch (Exception $e) {
+            websocketHelpers::writeToLog("Checking connection failed: " . $e->getMessage());
+            $this->closeConnection(); // Ensure closure of any partially opened connections
+            $this->setupDatabaseConnection(); // Attempt to re-establish the connection
+        }
     }
 
     public static function build_user_object($user_guid, $room_guid)
@@ -99,63 +119,50 @@ class websocketHelpers
             return null;
         }
     }
-    // function mysqli()
-    // {
 
-    //     return new mysqli($this->host, $this->easy_wordpress_user, $this->easy_wordpress_password, $this->easy_wordpress_database);
-    // }
-    public function checkConnection() {
-      
-        if (!$this->mysqli->ping()) {
-            echo "Reconnecting to the database\n";
-            $this->mysqli = new mysqli($this->host, $this->easy_wordpress_user, $this->easy_wordpress_password, $this->easy_wordpress_database);
-            // Optionally log this reconnection
-        }
-    }
     public static function getTimeLeft($user_num)
-        {
-            $dbInstance = self::getInstance();
+    {
+        $dbInstance = self::getInstance();
 
-            // Ensure the database connection is alive
-            
+        // Ensure the database connection is alive
 
-            $mysqli = $dbInstance->mysqli;
-            $tt = $tt1 = $tt2 = 0;
 
-            // Query 1
-            $query1 = "SELECT COALESCE(SUM(time_expire) * 60, 0) AS tt FROM card_cam WHERE user_id = ?";
-            $stmt1 = $mysqli->prepare($query1);
-            $stmt1->bind_param("i", $user_num);
-            $stmt1->execute();
-            $result1 = $stmt1->get_result();
-            if ($result1->num_rows > 0) {
-                $row = $result1->fetch_assoc();
-                $tt = $row['tt'];
-            }
-            $stmt1->close();
+        $mysqli = $dbInstance->mysqli;
+        $tt = $tt1 = $tt2 = 0;
 
-            // Query 2
-            $query2 = "SELECT COALESCE(SUM(time_use), 0) AS tt1 FROM chat_time_use WHERE user_id = ?";
-            $stmt2 = $mysqli->prepare($query2);
-            $stmt2->bind_param("i", $user_num);
-            $stmt2->execute();
-            $result2 = $stmt2->get_result();
-            if ($result2->num_rows > 0) {
-                $row = $result2->fetch_assoc();
-                $tt1 = $row['tt1'];
-            }
-            $stmt2->close();
-
-            // Calculate time left
-            $tt3 = $tt - ($tt1 + $tt2);
-            return $tt3;
+        // Query 1
+        $query1 = "SELECT COALESCE(SUM(time_expire) * 60, 0) AS tt FROM card_cam WHERE user_id = ?";
+        $stmt1 = $mysqli->prepare($query1);
+        $stmt1->bind_param("i", $user_num);
+        $stmt1->execute();
+        $result1 = $stmt1->get_result();
+        if ($result1->num_rows > 0) {
+            $row = $result1->fetch_assoc();
+            $tt = $row['tt'];
         }
+        $stmt1->close();
+
+        // Query 2
+        $query2 = "SELECT COALESCE(SUM(time_use), 0) AS tt1 FROM chat_time_use WHERE user_id = ?";
+        $stmt2 = $mysqli->prepare($query2);
+        $stmt2->bind_param("i", $user_num);
+        $stmt2->execute();
+        $result2 = $stmt2->get_result();
+        if ($result2->num_rows > 0) {
+            $row = $result2->fetch_assoc();
+            $tt1 = $row['tt1'];
+        }
+        $stmt2->close();
+
+        // Calculate time left
+        $tt3 = $tt - ($tt1 + $tt2);
+        return $tt3;
+    }
 
 
     public static function getSessionStatus(roomData $roomData)
     {
         $dbInstance = self::getInstance();
-        //$dbInstance->checkConnection();
         $mysqli = $dbInstance->mysqli;
         $query = "SELECT now() as sqlTime, user_enter_chat, session_status, user_last_refresh, model_last_refresh 
                   FROM chat_time_use 

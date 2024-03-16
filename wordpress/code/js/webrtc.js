@@ -7,21 +7,30 @@ const user_type = params.get("user_type");
 let localStream;
 let peerConnection;
 let userStartChat = 0;
+let disconnectMessageShowen = false;
 const config = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }], // Google's public STUN server
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: "turn:116.203.70.128:80?transport=udp",
+      username: "test",
+      credential: "test",
+    },
+    {
+      urls: "turn:116.203.70.128:80?transport=tcp",
+      username: "test",
+      credential: "test",
+    },
+  ], // Google's public STUN server
 };
 
 // Initialize WebSocket connection
-const socket = new WebSocket("wss://cam.afikim.pro:8080");
+const socket = new WebSocket("wss://mifgashim.net:8080");
 $(document).ready(function () {
-  // window.onbeforeunload = function (e) {
-  //   return "Refresh will kill the chat!";
-  // };
   peerConnection = new RTCPeerConnection(config);
   peerConnection.ontrack = function (event) {
     $("#waitingUser").hide();
     $("#localVideo").css("width", "25%");
-    console.log("ontrack event");
     remoteVideo.srcObject = event.streams[0];
     remoteVideo.onloadedmetadata = function () {
       remoteVideo.play();
@@ -29,7 +38,6 @@ $(document).ready(function () {
   };
   handleLogin("true", 1, function (x) {
     if (x === "true") {
-      console.log("handleLogin");
       $("#startCall").show();
     }
   });
@@ -81,18 +89,25 @@ socket.addEventListener("open", function (event) {
 // Handle WebSocket messages
 socket.addEventListener("message", async function (event) {
   const data = JSON.parse(event.data);
-  console.log(event.data);
+  //console.log(event.data);
   if (typeof data.error != "undefined") {
-    if (data.error === "sessionSts1") {
-      alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
-    } else if (data.error === "session_finished") {
-      alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
-    } else if (data.error === "moreThanOneUser") {
-      alert("Other user discounected");
-    } else if (data.error === "girlDiscounectInternet") {
-      alert("Other user discounected");
-    } else if (data.error === "finishTime") {
-      alert("User time finished");
+    if (disconnectMessageShowen == false) {
+      if (data.error === "sessionSts1") {
+        disconnectMessageShowen = true;
+        alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
+      } else if (data.error === "session_finished") {
+        disconnectMessageShowen = true;
+        alert("מפגש זה הסתיים ולא מחוייב יותר . עליך ליזום מפגש חדש");
+      } else if (data.error === "moreThanOneUser") {
+        disconnectMessageShowen = true;
+        alert("הבחור ניתק");
+      } else if (data.error === "girlDiscounectInternet") {
+        disconnectMessageShowen = true;
+        alert("הבחור ניתק");
+      } else if (data.error === "finishTime") {
+        disconnectMessageShowen = true;
+        alert("נגמר לבחור הזמו");
+      }
     }
     window.location.href = "/model-chats/";
   }
@@ -111,27 +126,27 @@ socket.addEventListener("message", async function (event) {
   } else if (data.type === "answer") {
     handleAnswer(data.data);
   } else if (data.type === "startCall") {
-    peerConnection.createOffer(
-      function (offer) {
+    peerConnection
+      .createOffer()
+      .then(function (offer) {
+        return peerConnection.setLocalDescription(offer);
+      })
+      .then(function () {
         socket.send(
           JSON.stringify({
             type: "offer",
             user_guid: user_guid,
             room_guid: room_guid,
             user_type: user_type,
-            data: offer,
+            data: peerConnection.localDescription,
           })
         );
-        console.log("offer:" + offer);
-        peerConnection.setLocalDescription(offer);
-      },
-      function (error) {
-        console.log("Error when creating an offer");
-      }
-    );
+      })
+      .catch(function (error) {
+        console.log("Error when creating an offer:", error);
+      });
   } else if (data.type === "candidate") {
     handleCandidate(data.data);
-    //await peerConnection.addIceCandidate(new RTCIceCandidate(data.data));
   }
 });
 
@@ -163,13 +178,16 @@ function handleLogin(success, type, callback) {
   if (success === false) {
     alert("Ooops...try a different username");
   } else {
+    navigator.getUserMedia =
+      navigator.getUserMedia ||
+      navigator.webkitGetUserMedia ||
+      navigator.mozGetUserMedia ||
+      navigator.mediaDevices;
     navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true }) // Request both video and audio
+      .getUserMedia({ video: { facingMode: "user" }, audio: true })
       .then(function (myStream) {
         localVideo.srcObject = myStream; // Display local stream in a video element
         myStream.getTracks().forEach((track) => {
-          console.log("track", track); // Log track details for debugging
-          console.log("peerConnection", peerConnection); // Log peerConnection state for debugging
           if (peerConnection) {
             // Validate peerConnection is not null or undefined
             peerConnection.addTrack(track, myStream); // Add each track to the peer connection
@@ -197,7 +215,6 @@ function disconnect() {
       data: "disconnect",
     })
   );
-  console.log("Function called by worker at", new Date());
 }
 function update_time_use() {
   socket.send(
@@ -209,7 +226,6 @@ function update_time_use() {
       data: "update",
     })
   );
-  //console.log("Function called by worker at", new Date());
 }
 
 setInterval(update_time_use, 3000); // Call doSomething every 3 seconds

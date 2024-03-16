@@ -258,8 +258,8 @@ $loop = LoopFactory::create();
 
 // SSL options as an array
 $sslOptions = [
-    'local_cert' => '/etc/letsencrypt/live/cam.afikim.pro/fullchain.pem',
-    'local_pk' => '/etc/letsencrypt/live/cam.afikim.pro/privkey.pem',
+    'local_cert' => '/etc/letsencrypt/live/mifgashim.net/fullchain.pem',
+    'local_pk' => '/etc/letsencrypt/live/mifgashim.net/privkey.pem',
     'verify_peer' => false,
     'allow_self_signed' => true,
 ];

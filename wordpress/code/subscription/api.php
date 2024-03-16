@@ -41,11 +41,11 @@ if ($q_type == "start_chat") {
             whatsapp::insertMessageToWhatsApp($newMessageToUser, 4, $current_user->ID, $modelUser['ID'], 1);
             //send message to model
             $userMetaName = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$current_user->ID, "nickname"]);
-            // $newMessageToGirl = "שלום ממשתמש " . $userMetaName['meta_value'];
-            $newMessageToGirl = model_helper::getUserUniqueNumberForWhatsapp($current_user->ID) . "שלום ממשתמש " . $userMetaName['meta_value'];
+            $newMessageToGirl = "שלום ממשתמש " . $userMetaName['meta_value'];
             $girlMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$modelUser['ID'], "phone"]);
             $whatsappResGirl = $whatsapp->sendMessage($girlMetaPhone["meta_value"], $newMessageToGirl);
             whatsapp::insertMessageToWhatsApp($newMessageToGirl, 4, $current_user->ID, $modelUser['ID'], 0);
+            // ChatTimeUse::insertChatTimeUseMessage($modelUser['ID'], $current_user->ID, 0, 0);
             echo "ok";
         } else {
             echo "הודעת מערכת: כבר לחצת על בחורה זו היום. אין אפשרות ללחוץ פעמיים באותו היום";
@@ -59,7 +59,7 @@ if ($q_type == "start_chat") {
         $selectQA = " or is_qa=1";
     }
     $dbInstance = db::getInstance();
-    $modelsSql = "SELECT * FROM wp_users WHERE is_model=? and admin_approve=1 and (is_qa=0 or is_qa is null" . $selectQA . ") order by whatsapp_instance_id desc";
+    $modelsSql = "SELECT * FROM wp_users WHERE is_model=? and admin_approve=1 and (is_qa=0 or is_qa is null" . $selectQA . ") order by ID desc";
     $models = R::getAll($modelsSql, [1]);
     $modelIds = array_map(function ($model) {
         return $model['ID'];
@@ -76,7 +76,7 @@ if ($q_type == "start_chat") {
         $cardNew['image'] = "/wp-content" . model_helper::getMetaValue("user_avatar", $filteredByUserId);
         $cardNew['name'] = model_helper::getMetaValue("nickname", $filteredByUserId);
         $description = model_helper::getMetaValue("description", $filteredByUserId);
-        $cardNew['description'] = htmlspecialchars((strlen($description) > 100 ? substr($description, 0, 100) . "..." : $description));
+        $cardNew['description'] =  (strlen($description) > 100 ? substr($description, 0, 100) . "..." : $description);
         $cardNew['guid'] = $model["user_guid"];
         $cardNew['phone'] = model_helper::getMetaValue("virtual_phone", $filteredByUserId);
         // $cardNew['age'] = model_helper::calculateAge(model_helper::getMetaValue("age", $filteredByUserId));
@@ -95,18 +95,11 @@ if ($q_type == "start_chat") {
         }
 
         $cardNew['languages'] = $languagesArrRes;
-
-        if (isset($cardNew['phone']) && $cardNew['phone'] != "") {
-            $cardNew['linkToConnect'] = true;
-        } else {
-            $cardNew['linkToConnect'] = false;
-        }
-
         $modelResponse[] = $cardNew;
     }
     echo json_encode($modelResponse, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    // die();
+    die();
 } else if ($q_type == "models_chats") {
     $model_user = wp_get_current_user();
     $dbInstance = db::getInstance();
@@ -155,12 +148,15 @@ if ($q_type == "start_chat") {
         $offset = 0;
     }
     $paramsArr = [];
-    if ($check_for_new == "-1") {
-        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? order by id desc LIMIT 50 OFFSET ?";
+    if ($check_for_new == "0") {
+        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? order by id desc LIMIT 500 OFFSET ?";
         $paramsArr = [$chat['ID'], $offset];
     } else {
-        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? and id>? order by id desc LIMIT 50 OFFSET ?";
-        $paramsArr = [$chat['ID'], $check_for_new, $offset];
+        $messagesSql = "SELECT * FROM wp_whatsapp_messages WHERE wp_whatsapp_chats_id=? and date_in>? order by id desc LIMIT 500 OFFSET ?";
+        $simplifiedDateTime = preg_replace('/GMT.*$/', '', $check_for_new);
+        $dateTime = new DateTime($simplifiedDateTime);
+        $formattedDateTime = $dateTime->format('Y-m-d H:i:s');
+        $paramsArr = [$chat['ID'], $formattedDateTime, $offset];
     }
     $messages = R::getAll($messagesSql, $paramsArr);
     $checkGirlCanSendMessages = model_helper::checkGirlCanSendMessages($chat['ID']);
@@ -191,17 +187,15 @@ if ($q_type == "start_chat") {
     echo json_encode($response);
     die();
 } else if ($q_type == "create_chat_room_user") {
-    $user_guid = filter_var($_POST['user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
-    $model_user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $user_guid]);
+    $model_user = wp_get_current_user();
     $room_guid = filter_var($_POST['room_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $other_user_guid = filter_var($_POST['other_user_guid'], FILTER_SANITIZE_FULL_SPECIAL_CHARS);
     $user = R::getRow("SELECT * FROM wp_users WHERE user_guid = :value", [':value' => $other_user_guid]);
     $other_user_url = "https://mifgashim.net/video-chat-customer?room_guid=" . $room_guid . "&user_type=customer&user_guid=" . $other_user_guid;
     $userMetaPhone = R::getRow('SELECT * FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [$user['ID'], "phone"]);
-    $whatsapp = new whatsapp($model_user['whatsapp_instance_id']);
+    $whatsapp = new whatsapp($model_user->whatsapp_instance_id);
     $whatsappRes = $whatsapp->sendMessage($userMetaPhone["meta_value"], $other_user_url);
-    $newMessageID = whatsapp::insertMessageToWhatsApp($other_user_url, 3, $user["ID"], $model_user['ID'], 1);
-    ChatTimeUse::updateChatTimeUseMessageID($user['ID'], $model_user['ID'], $room_guid, $newMessageID);
+    whatsapp::insertMessageToWhatsApp($other_user_url, 3, $user["ID"], $model_user->ID, 1);
     echo '{"res":"' . $other_user_url . '"}';
     die();
 } else if ($q_type == "send_message_to_user") {
@@ -224,17 +218,10 @@ if ($q_type == "start_chat") {
             mkdir($target_dir, 0777, true);
         }
         $messageType = 0;
-        $message_type_client = $_POST['message_type'];
-        if ($message_type_client == "2") {
-            if (model_helper::isImageUploaded($_FILES["file"]['tmp_name'])) {
-                $messageType = 1;
-            } else if (model_helper::isVideoUploaded($_FILES["file"]['tmp_name'])) {
-                $messageType = 2;
-            }
-        } else {
-            $messageType = 5;
-            $new_file_name = uniqid() . '.mp3';
-            $target_file = $target_dir . $new_file_name;
+        if (model_helper::isImageUploaded($_FILES["file"]['tmp_name'])) {
+            $messageType = 1;
+        } else if (model_helper::isVideoUploaded($_FILES["file"]['tmp_name'])) {
+            $messageType = 2;
         }
         if ($messageType == 0) {
             echo "{\"error\":\"file type not supported\"}";
@@ -242,12 +229,7 @@ if ($q_type == "start_chat") {
         } else {
             move_uploaded_file($_FILES["file"]["tmp_name"], $target_file);
             $file_website_url = whatsapp::getCurrentDomain() . "/wp-content/uploads/models_chats/" . $model_user->ID . "/" . $room_id . "/" . $new_file_name;
-            if ($messageType == 5) {
-                $audioMsgContent = "הודעת שמע. לחצו לשמוע -> " . $file_website_url;
-                $whatsappRes = $whatsapp->sendMessage($customerUserMetaPhone["meta_value"], $audioMsgContent);
-            } else {
-                $whatsappRes = $whatsapp->sendFile($file_website_url, $originalMessage, $new_file_name, $customerUserMetaPhone["meta_value"]);
-            }
+            $whatsappRes = $whatsapp->sendFile($file_website_url, $originalMessage, $new_file_name, $customerUserMetaPhone["meta_value"]);
             $inserted_id = whatsapp::insertMessageToWhatsApp($messageText, $messageType, $message_room["user_num"], $model_user->ID, 1, $new_file_name);
         }
     } else {
@@ -358,7 +340,6 @@ if ($q_type == "start_chat") {
         $cardNew['user_name'] = $userMetaName['meta_value'];
         $send_message = $chat_time_use["send_message"];
         $cardNew['chat_type'] = model_helper::getChatTipe($chat_time_use['send_message']);
-        $cardNew['message_type'] = model_helper::getMessageType($chat_time_use['wp_message_id']);
         $chat_time_use_res[] = $cardNew;
     }
 
@@ -476,12 +457,9 @@ if ($q_type == "start_chat") {
     }
 
     $cardNew['languages'] = $languagesArrRes;
-    if (isset($cardNew['phone']) && $cardNew['phone'] != "") {
-        $cardNew['linkToConnect'] = true;
-    } else {
-        $cardNew['linkToConnect'] = false;
-    }
+
     echo json_encode($cardNew);
+    die();
 } else if ($q_type == "block_user") {
     $model_user = wp_get_current_user();
     $dbInstance = db::getInstance();

@@ -5,7 +5,6 @@ class credit_card_payment
 {
     public function __construct()
     {
-
     }
 
     public static function insert3DLog($transcationID, $errorCode, $errorMessage, $orderID, $security): void
@@ -36,7 +35,7 @@ class credit_card_payment
         $sql = "INSERT INTO card_cam (order_day,price,site_name,ipaddress,time_expire,lastdigits,original_date,user_id,user_ask_to_delete,admin_show,TransactionID,Amount_Currency,referrer,transactionProcessor,noRealPayment,orderId,country,CCCountry,inatecTransactionid,inatecTransactionStatus,ccDetailsID,paymentStatus,approved3D,timeExpiredTemp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         $stmt = $mysqli->prepare($sql);
         $date = date('Y-m-d H:i:s');
-        $website = "cam.afikim.pro";
+        $website = "mifgashim.net";
         $ipAddress = credit_card_payment::getUserIP();
         $zeroVal = "0";
         $oneVal = "1";
@@ -45,10 +44,33 @@ class credit_card_payment
         $country = "IL";
         $timeExpire = $paymentData->paymentStatus == 1 ? $paymentData->timeExpiredTemp : "0";
         $transactionProcessor = "Cam online";
-        $stmt->bind_param("ssssdssiiissssssssssisss", $date, $paymentData->price, $website, $ipAddress, $timeExpire,
-            $paymentData->lastdigits, $date, $paymentData->user_id, $zeroVal, $oneVal, $emptyVal, $curency, $emptyVal, $transactionProcessor, $zeroVal,
-            $paymentData->orderId, $country, $country, $paymentData->inatecTransactionid, $paymentData->inatecTransactionStatus, $paymentData->ccDetailsID,
-            $paymentData->paymentStatus, $zeroVal, $paymentData->timeExpiredTemp);
+        $stmt->bind_param(
+            "ssssdssiiissssssssssisss",
+            $date,
+            $paymentData->price,
+            $website,
+            $ipAddress,
+            $timeExpire,
+            $paymentData->lastdigits,
+            $date,
+            $paymentData->user_id,
+            $zeroVal,
+            $oneVal,
+            $emptyVal,
+            $curency,
+            $emptyVal,
+            $transactionProcessor,
+            $zeroVal,
+            $paymentData->orderId,
+            $country,
+            $country,
+            $paymentData->inatecTransactionid,
+            $paymentData->inatecTransactionStatus,
+            $paymentData->ccDetailsID,
+            $paymentData->paymentStatus,
+            $zeroVal,
+            $paymentData->timeExpiredTemp
+        );
         if (!$stmt->execute()) {
             errors::addError("Error: " . $stmt->error, "classes/credit_card_payment.php line 35");
         }
@@ -80,9 +102,23 @@ class credit_card_payment
             $encryptedCard = CryptoHelper::encrypt($creditCard->card_number);
             $encryptIDNumber = CryptoHelper::encrypt($creditCard->id_number);
             $active = "1";
-            $stmt->bind_param("sssssississsss", $creditCard->card_number, $creditCard->id_number, $creditCard->year_date, $creditCard->month_date,
-                $creditCard->cvv, $creditCard->user_id, $creditCard->last_digits, $date, $active, $creditCard->firstName, $creditCard->lastName,
-                $encryptedCard, $creditCard->email, $encryptIDNumber);
+            $stmt->bind_param(
+                "sssssississsss",
+                $creditCard->card_number,
+                $creditCard->id_number,
+                $creditCard->year_date,
+                $creditCard->month_date,
+                $creditCard->cvv,
+                $creditCard->user_id,
+                $creditCard->last_digits,
+                $date,
+                $active,
+                $creditCard->firstName,
+                $creditCard->lastName,
+                $encryptedCard,
+                $creditCard->email,
+                $encryptIDNumber
+            );
             if (!$stmt->execute()) {
                 errors::addError("Error: " . $stmt->error, "classes/credit_card_payment.php line 69");
             }

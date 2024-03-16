@@ -24,6 +24,16 @@ class ChatTimeUse
 
     public $create_date;
 
+    public static function updateChatTimeUseMessageID($user_id, $girl_id, $room_id, $message_id)
+    {
+
+        $dbInstance = db::getInstance();
+        $pdo = $dbInstance->getPdo();
+        $updateSql = "UPDATE chat_time_use SET wp_message_id=? WHERE girl_num=? AND user_id=? and room_guid=?";
+        $updateParams = [$message_id, $girl_id, $user_id, $room_id];
+        R::exec($updateSql, $updateParams);
+    }
+
     // Constructor
     public static function insertChatTimeUse($girl_num, $user_guid, $sessionMinTime, $pricePerMinute, $totalPrice, $discount)
     {
@@ -81,24 +91,27 @@ class ChatTimeUse
         }
     }
 
-    public static function insertChatTimeUseMessage($girl_num, $user_num, $totalPrice, $discount): void
+    public static function insertChatTimeUseMessage($girl_num, $user_num, $send_message,  $new_message_id, $price_per_message, $totalPrice, $discount): void
     {
         $dbInstance = db::getInstance();
         $pdo = $dbInstance->getPdo();
-        $sql = "INSERT INTO chat_time_use (create_date, time_use, datein, dateout, girl_num, send_message, user_id, multiply_sum, end_error, sessionMinTime, pricePerMinute, totalPrice, discount) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO chat_time_use (create_date, time_use, datein, dateout, girl_num, send_message, user_id, multiply_sum, end_error, sessionMinTime, pricePerMinute, totalPrice, discount,wp_message_id) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)";
         $stmt = $pdo->prepare($sql);
-        $values = [date('Y-m-d H:i:s'), 20, date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $girl_num, 1, $user_num, 1, "", 0, 0, $totalPrice, $discount];
+        $values = [date('Y-m-d H:i:s'), $price_per_message, date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $girl_num, $send_message, $user_num, 1, "", 0, 0, $totalPrice, $discount, $new_message_id];
         $stmt->execute($values);
     }
 
     public static function getTimeLeft($user_num)
     {
+        if ($user_num == 0) {
+            return 0;
+        }
         $dbInstance = db::getInstance();
         $mysqli = $dbInstance->mysqli();
         $tt = $tt1 = $tt2 = 0;
 
-// Query 1: Calculate tt
+        // Query 1: Calculate tt
         $query1 = "SELECT COALESCE(SUM(time_expire) * 60, 0) AS tt FROM card_cam WHERE user_id = ?";
         $stmt1 = $mysqli->prepare($query1);
         $stmt1->bind_param("i", $user_num);
@@ -110,7 +123,7 @@ class ChatTimeUse
         }
         $stmt1->close();
 
-// Query 2: Calculate tt1
+        // Query 2: Calculate tt1
         $query2 = "SELECT COALESCE(SUM(time_use), 0) AS tt1 FROM chat_time_use WHERE user_id = ?";
         $stmt2 = $mysqli->prepare($query2);
         $stmt2->bind_param("i", $user_num);
@@ -122,23 +135,21 @@ class ChatTimeUse
         }
         $stmt2->close();
 
-//// Query 3: Calculate tt2
-//        $query3 = "SELECT COALESCE(time_use, 0) AS tt2 FROM sum_log_chat_time_use WHERE user_id = ?";
-//        $stmt3 = $mysqli->prepare($query3);
-//        $stmt3->bind_param("i", $user_num);
-//        $stmt3->execute();
-//        $result3 = $stmt3->get_result();
-//        if ($result3->num_rows > 0) {
-//            $row = $result3->fetch_assoc();
-//            $tt2 = $row['tt2'];
-//        }
-//        $stmt3->close();
+        //// Query 3: Calculate tt2
+        //        $query3 = "SELECT COALESCE(time_use, 0) AS tt2 FROM sum_log_chat_time_use WHERE user_id = ?";
+        //        $stmt3 = $mysqli->prepare($query3);
+        //        $stmt3->bind_param("i", $user_num);
+        //        $stmt3->execute();
+        //        $result3 = $stmt3->get_result();
+        //        if ($result3->num_rows > 0) {
+        //            $row = $result3->fetch_assoc();
+        //            $tt2 = $row['tt2'];
+        //        }
+        //        $stmt3->close();
 
-// Calculate tt3
+        // Calculate tt3
         $tt3 = $tt - ($tt1 + $tt2);
         $mysqli->close();
         return $tt3;
     }
 }
-
-?>

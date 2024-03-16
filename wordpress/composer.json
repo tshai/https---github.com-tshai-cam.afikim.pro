@@ -1,11 +1,11 @@
 {
-    "name": "root/cam.afikim.pro",
-    "require": {
-        "gabordemooij/redbean": "^5.7",
-        "guzzlehttp/guzzle": "^7.8",
-        "zadarma/user-api-v1": "^1.1",
-        "cboden/ratchet": "^0.4.4",
-        "ext-openssl": "*",
-        "ext-curl": "*"
-    }
+  "name": "root/mifgashim.net",
+  "require": {
+    "gabordemooij/redbean": "^5.7",
+    "guzzlehttp/guzzle": "^7.8",
+    "zadarma/user-api-v1": "^1.1",
+    "cboden/ratchet": "^0.4.4",
+    "ext-openssl": "*",
+    "ext-curl": "*"
+  }
 }
